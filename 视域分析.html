@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Floor Plan (All Features)</title>
+  <style>
+    /* 页面基本布局：左侧 sidebar + 右侧 main-content */
+    body {
+      display: flex;
+      margin: 0;
+      padding: 0;
+      height: 100vh; /* 占满视窗高度 */
+      font-family: Arial, sans-serif;
+    }
+    .sidebar {
+      width: 250px;       /* 固定侧边栏宽度 */
+      background-color: #f0f0f0;
+      padding: 20px;
+      box-sizing: border-box;
+      border-right: 1px solid #7e7e7e;
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar button {
+      margin-bottom: 10px;
+      padding: 8px 12px;
+      cursor: pointer;
+      border: none;
+      border-radius: 5px;
+      background-color: #dfdfdf;
+      color: #333;
+      transition: background-color 0.3s;
+    }
+    .sidebar button:hover {
+      background-color: #878a87;
+    }
+    .sidebar textarea {
+      width: 100%;
+      margin-bottom: 10px;
+      padding: 10px;
+      box-sizing: border-box;
+      font-size: 14px;
+    }
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden; /* 避免出现滚动条 */
+    }
+    canvas {
+      display: block; /* 去除 inline-block 的空白 */
+      background-color: #fff;
+    }
+    #clickPosition {
+      position: absolute;
+      left: 20px;
+      bottom: 20px;
+      color: #333;
+      pointer-events: none; /* 不影响鼠标点击 */
+    }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <h1>Floor Plan Tools</h1>
+
+    <!-- 返回泡泡图按钮 -->
+    <button id="backButton">返回泡泡图</button>
+
+    <!-- 粘贴 JSON 的文本框与“Generate”按钮 -->
+    <textarea id="jsonInput" rows="6" placeholder="Paste your JSON here"></textarea>
+    <button id="generateButton">Generate Floor Plan</button>
+
+    <!-- 导入 JSON 文件：隐藏的 input + 按钮 -->
+    <button id="importJsonButton">Import JSON</button>
+    <input type="file" id="fileInput" accept=".json" style="display: none;"/>
+
+    <!-- 清空点击点 & 保存图像 -->
+    <button id="clearPoints">Clear Points</button>
+    <button id="saveImage" style="display:none;">Save Image</button>
+  </div>
+
+  <div class="main-content">
+    <canvas id="floorPlanCanvas"></canvas>
+    <div id="clickPosition"></div>
+  </div>
+
+  <script>
+    // ===== 全局变量 =====
+    let clickPoints = [];         // footpoint 或手动点击点
+    let transform = { scale: 1, minX: 0, minY: 0 };
+    let data = null;             // 当前解析好的完整 JSON
+
+    // ====================
+    // 几何辅助函数
+    // ====================
+    function isPointInPolygon(point, polygon) {
+      let [x, y] = point;
+      let inside = false;
+      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        let [xi, yi] = polygon[i];
+        let [xj, yj] = polygon[j];
+        let intersect =
+          (yi > y) !== (yj > y) &&
+          (x < (xj - xi)*(y - yi)/(yj - yi) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    function lineIntersection(p1, p2, p3, p4) {
+      const denom = (p4[1]-p3[1])*(p2[0]-p1[0]) - (p4[0]-p3[0])*(p2[1]-p1[1]);
+      if (denom === 0) return null;
+      const t1 = ((p4[0]-p3[0])*(p1[1]-p3[1]) - (p4[1]-p3[1])*(p1[0]-p3[0]))/denom;
+      const t2 = ((p2[0]-p1[0])*(p1[1]-p3[1]) - (p2[1]-p1[1])*(p1[0]-p3[0]))/denom;
+      if (t1>=0 && t1<=1 && t2>=0 && t2<=1) {
+        return [
+          p1[0]+t1*(p2[0]-p1[0]),
+          p1[1]+t1*(p2[1]-p1[1])
+        ];
+      }
+      return null;
+    }
+
+    function calculateVisibility(point, walls) {
+      let result = [];
+      for (let angle = 0; angle < 360; angle++) {
+        const rad = angle * Math.PI/180;
+        const dir = [ Math.cos(rad)*99999, Math.sin(rad)*99999 ];
+        let closest = null;
+        walls.forEach(w => {
+          const inter = lineIntersection(
+            point, [point[0]+dir[0], point[1]+dir[1]],
+            w[0], w[1]
+          );
+          if (inter) {
+            const dist = Math.hypot(inter[0]-point[0], inter[1]-point[1]);
+            if (!closest) {
+              closest = inter;
+            } else {
+              const oldDist = Math.hypot(
+                closest[0]-point[0],
+                closest[1]-point[1]
+              );
+              if (dist < oldDist) {
+                closest = inter;
+              }
+            }
+          }
+        });
+        result.push(closest || [point[0]+dir[0], point[1]+dir[1]]);
+      }
+      return result;
+    }
+
+    // ====================
+    // 平面图绘制主函数
+    // ====================
+    function drawFloorPlan(data) {
+      const canvas = document.getElementById('floorPlanCanvas');
+      const ctx = canvas.getContext('2d');
+
+      // 1. 计算外包矩形
+      let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+      if (Array.isArray(data.walls)) {
+        data.walls.forEach(wall => {
+          wall.forEach(pt => {
+            minX = Math.min(minX, pt[0]);
+            minY = Math.min(minY, pt[1]);
+            maxX = Math.max(maxX, pt[0]);
+            maxY = Math.max(maxY, pt[1]);
+          });
+        });
+      }
+      if (Array.isArray(data.doors)) {
+        data.doors.forEach(d => {
+          d.bbox.forEach(pt => {
+            minX = Math.min(minX, pt[0]);
+            minY = Math.min(minY, pt[1]);
+            maxX = Math.max(maxX, pt[0]);
+            maxY = Math.max(maxY, pt[1]);
+          });
+        });
+      }
+      if (Array.isArray(data.rooms)) {
+        data.rooms.forEach(r => {
+          r.forEach(pt => {
+            const x=pt.x, y=pt.y;
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+          });
+        });
+      }
+      if (minX>maxX || minY>maxY) {
+        minX=0; maxX=100; minY=0; maxY=100; // 无数据时给个默认值
+      }
+
+      // 2. 留出边距
+      const PADDING = 50;
+      minX -= PADDING;
+      minY -= PADDING;
+      maxX += PADDING;
+      maxY += PADDING;
+
+      // 3. 获取容器大小
+      const container = document.querySelector('.main-content');
+      const containerWidth = container.clientWidth;
+      const containerHeight = container.clientHeight;
+
+      // 4. 计算 scale
+      const dataWidth = maxX - minX;
+      const dataHeight = maxY - minY;
+      let scale=1;
+      if(dataWidth>0 && dataHeight>0) {
+        const scaleX = containerWidth/dataWidth;
+        const scaleY = containerHeight/dataHeight;
+        scale=Math.min(scaleX, scaleY);
+      }
+
+      // 5. 设置 canvas 像素大小
+      canvas.width = containerWidth;
+      canvas.height = containerHeight;
+
+      // 6. 坐标变换
+      ctx.setTransform(1,0,0,1,0,0);
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.translate(-minX, -minY);
+      ctx.scale(scale, scale);
+
+      transform.scale = scale;
+      transform.minX = minX;
+      transform.minY = minY;
+
+      // 7. 绘制
+      ctx.strokeStyle='black';
+      ctx.lineWidth=2/scale;
+
+      // walls
+      if (Array.isArray(data.walls)) {
+        data.walls.forEach(wall => {
+          ctx.beginPath();
+          wall.forEach((pt,i)=>{
+            if(i===0) ctx.moveTo(pt[0], pt[1]);
+            else ctx.lineTo(pt[0], pt[1]);
+          });
+          ctx.stroke();
+        });
+      }
+
+      // doors
+      if (Array.isArray(data.doors)) {
+        ctx.fillStyle='brown';
+        data.doors.forEach(door => {
+          ctx.beginPath();
+          door.bbox.forEach((pt,i)=>{
+            if(i===0) ctx.moveTo(pt[0], pt[1]);
+            else ctx.lineTo(pt[0], pt[1]);
+          });
+          ctx.closePath();
+          ctx.fill();
+        });
+      }
+
+      // rooms
+      if (Array.isArray(data.rooms)) {
+        data.rooms.forEach(room => {
+          ctx.fillStyle='rgba(255,255,255,0.5)';
+          ctx.beginPath();
+          room.forEach((pt,i)=>{
+            if(i===0) ctx.moveTo(pt.x, pt.y);
+            else ctx.lineTo(pt.x, pt.y);
+          });
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        });
+      }
+    }
+
+    // 叠加绘制可视域
+    function drawAllVisibility(ctx, data, points) {
+      if (!data || !Array.isArray(data.walls)) return;
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      ctx.fillStyle='rgba(255,0,0,0.5)';
+      ctx.globalAlpha=0.5;
+
+      points.forEach(pt=>{
+        const poly=calculateVisibility(pt, data.walls);
+        ctx.beginPath();
+        poly.forEach((p,i)=>{
+          if(i===0) ctx.moveTo(p[0], p[1]);
+          else ctx.lineTo(p[0], p[1]);
+        });
+        ctx.closePath();
+        ctx.fill();
+      });
+
+      // 画点击点
+      ctx.globalCompositeOperation='source-over';
+      ctx.globalAlpha=1;
+      ctx.fillStyle='blue';
+      points.forEach(pt=>{
+        ctx.beginPath();
+        ctx.arc(pt[0],pt[1],3,0,2*Math.PI);
+        ctx.fill();
+      });
+      ctx.restore();
+    }
+
+    // ====================
+    // 门与墙体处理
+    // ====================
+    function subtractDoorsFromWalls(walls, doors){
+      let newWalls=[];
+      walls.forEach(w=>{
+        const segments=getWallSegments(w.position);
+        segments.forEach(seg=>{
+          let splitPoints=[];
+          doors.forEach(d=>{
+            const doorEdges=getEdgesFromBbox(d.bbox);
+            doorEdges.forEach(e=>{
+              const inter=lineIntersection(seg[0],seg[1], e[0], e[1]);
+              if(inter) splitPoints.push(inter);
+            });
+            // 中点检测是否整段在门里
+            const mid=midpoint(seg[0],seg[1]);
+            if(isPointInPolygon(mid,d.bbox)){
+              // 整段丢弃
+              return;
+            }
+          });
+          splitPoints=removeDuplicatePoints(splitPoints);
+          const subSegs=splitSegmentAtPoints(seg,splitPoints);
+          subSegs.forEach(s=>{
+            const mid2=midpoint(s[0],s[1]);
+            let insideDoor=false;
+            doors.forEach(d=>{
+              if(isPointInPolygon(mid2,d.bbox)) insideDoor=true;
+            });
+            if(!insideDoor) newWalls.push(s);
+          });
+        });
+      });
+      return newWalls;
+    }
+
+    function getWallSegments(positions){
+      let arr=[];
+      for(let i=0; i<positions.length-1; i++){
+        arr.push([positions[i],positions[i+1]]);
+      }
+      return arr;
+    }
+    function getEdgesFromBbox(bbox){
+      let edges=[];
+      for(let i=0;i<bbox.length;i++){
+        edges.push([ bbox[i], bbox[(i+1)%bbox.length] ]);
+      }
+      return edges;
+    }
+    function midpoint(a,b){
+      return [ (a[0]+b[0])/2, (a[1]+b[1])/2 ];
+    }
+    function removeDuplicatePoints(points, eps=1e-6){
+      let unique=[];
+      points.forEach(p=>{
+        let dup=false;
+        for(let q of unique){
+          if(Math.hypot(p[0]-q[0],p[1]-q[1])<eps){
+            dup=true; break;
+          }
+        }
+        if(!dup) unique.push(p);
+      });
+      return unique;
+    }
+    function splitSegmentAtPoints(segment, pts){
+      pts.sort((a,b)=>{
+        const da=Math.hypot(a[0]-segment[0][0], a[1]-segment[0][1]);
+        const db=Math.hypot(b[0]-segment[0][0], b[1]-segment[0][1]);
+        return da-db;
+      });
+      let res=[];
+      let prev=segment[0];
+      pts.forEach(p=>{
+        res.push([prev,p]);
+        prev=p;
+      });
+      res.push([prev,segment[1]]);
+      return res;
+    }
+
+    // ====================
+    // JSON 数据处理流程
+    // ====================
+    function processData(jsonData){
+      // 减门洞
+      jsonData.walls = subtractDoorsFromWalls(jsonData.walls, jsonData.doors||[]);
+      data=jsonData;
+
+      // 如果有 footpoint，则自动加载为点击点
+      clickPoints=[];
+      if(Array.isArray(data.footpoint)){
+        data.footpoint.forEach(fp=>{
+          clickPoints.push([fp.x, fp.y]);
+        });
+      }
+
+      // 绘制
+      drawFloorPlan(data);
+      let ctx=floorPlanCanvas.getContext('2d');
+      drawAllVisibility(ctx, data, clickPoints);
+
+      // 显示保存按钮
+      document.getElementById('saveImage').style.display='';
+    }
+
+    // ====================
+    // 事件处理
+    // ====================
+
+    // (1) 返回泡泡图
+    document.getElementById('backButton').addEventListener('click', ()=>{
+      const params=new URLSearchParams(window.location.search);
+      const returnUrl=params.get('returnUrl');
+      if(returnUrl){
+        window.location.href=returnUrl;
+      } else {
+        window.history.back();
+      }
+    });
+
+    // (2) Generate (粘贴JSON)
+    document.getElementById('generateButton').addEventListener('click', ()=>{
+      const str=document.getElementById('jsonInput').value;
+      try {
+        let jsonData=JSON.parse(str);
+        processData(jsonData);
+      } catch(err){
+        alert('Invalid JSON content');
+      }
+    });
+
+    // (3) Import JSON (本地文件)
+    document.getElementById('importJsonButton').addEventListener('click', ()=>{
+      // 触发隐藏的文件选择
+      document.getElementById('fileInput').click();
+    });
+    document.getElementById('fileInput').addEventListener('change', (e)=>{
+      const file=e.target.files[0];
+      if(!file) return;
+      const reader=new FileReader();
+      reader.onload=(evt)=>{
+        try{
+          let jsonData=JSON.parse(evt.target.result);
+          processData(jsonData);
+        }catch(err){
+          alert('Invalid JSON file');
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    // (4) Clear Points
+    document.getElementById('clearPoints').addEventListener('click', ()=>{
+      clickPoints=[];
+      if(data){
+        drawFloorPlan(data);
+        let ctx=floorPlanCanvas.getContext('2d');
+        drawAllVisibility(ctx, data, clickPoints);
+      }
+      document.getElementById('clickPosition').innerText='';
+    });
+
+    // (5) Save Image
+    document.getElementById('saveImage').addEventListener('click', ()=>{
+      const canvas=document.getElementById('floorPlanCanvas');
+      const link=document.createElement('a');
+      link.download='floorplan.png';
+      link.href=canvas.toDataURL();
+      link.click();
+    });
+
+    // (6) Canvas Click -> 新增可视域点
+    floorPlanCanvas.addEventListener('click', (e)=>{
+      if(!data) return;
+      const canvas=e.target;
+      const rect=canvas.getBoundingClientRect();
+
+      // 修正点击坐标(考虑DPR/CSS缩放)
+      let scaleX = canvas.width / rect.width;
+      let scaleY = canvas.height / rect.height;
+      const xCanvas=(e.clientX - rect.left)*scaleX;
+      const yCanvas=(e.clientY - rect.top)*scaleY;
+
+      // 逆变换到世界坐标
+      const worldX=xCanvas/transform.scale + transform.minX;
+      const worldY=yCanvas/transform.scale + transform.minY;
+
+      clickPoints.push([worldX, worldY]);
+
+      drawFloorPlan(data);
+      let ctx=floorPlanCanvas.getContext('2d');
+      drawAllVisibility(ctx, data, clickPoints);
+
+      // 显示点击坐标
+      document.getElementById('clickPosition').innerText=
+        `Clicked: (${worldX.toFixed(2)}, ${worldY.toFixed(2)})`;
+    });
+
+    // (7) 窗口大小变化 -> 重绘
+    window.addEventListener('resize', ()=>{
+      if(data){
+        drawFloorPlan(data);
+        let ctx=floorPlanCanvas.getContext('2d');
+        drawAllVisibility(ctx, data, clickPoints);
+      }
+    });
+  </script>
+</body>
+</html>

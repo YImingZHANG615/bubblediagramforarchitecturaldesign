@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <title>室内寻路示例（线段相交映射 + A*算法 + 门覆盖墙）</title>
+  <style>
+    /* 一、整体布局：左侧操作栏 + 右侧网格区域 */
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: sans-serif;
+    }
+    #container {
+      display: flex;       /* 左右分栏 */
+      width: 100%;
+      height: 100vh;
+      overflow: hidden;    /* 可改为 auto */
+    }
+
+    /* 二、左侧 sidebar 样式 */
+    #sidebar {
+      width: 300px;
+      min-width: 220px;
+      border-right: 1px solid #ccc;
+      padding: 10px;
+      box-sizing: border-box;
+      overflow-y: auto;
+      background-color: #f0f0f0;
+    }
+    #sidebar textarea {
+      width: 100%;
+      height: 150px;
+      display: block;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+    #sidebar button, #sidebar input {
+      margin: 5px 5px 5px 0;
+    }
+
+    /* 三、右侧网格区：容器 + 内部网格本体 */
+    #gridWrapper {
+      flex: 1;
+      position: relative;
+      overflow: hidden;   /* 避免滚动溢出；可改为auto */
+      background-color: #fff;
+    }
+    #grid {
+      position: absolute;
+      top: 0;
+      left: 0;
+      transform-origin: top left;
+      /* 将用 JS 来动态设置 scale(...) */
+    }
+
+    /* 四、网格行与格子的基础样式 */
+    .row {
+      display: flex;
+    }
+    .cell {
+      width: 16px;    /* 网格单元原始大小 */
+      height: 16px;
+      border: 1px solid #ccc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      user-select: none;
+      position: relative;
+      background-color: #f9f9f9;
+      box-sizing: border-box;
+    }
+
+    /* 五、各种格子状态 */
+    .cell.wall {
+      background-color: #666; /* 灰色墙 */
+    }
+    .cell.door {
+      background-color: #87CEFA; /* 浅蓝色门 */
+    }
+    .cell.start {
+      background-color: #4CAF50; /* 绿色起点 */
+      color: white;
+    }
+    .cell.end {
+      background-color: #F44336; /* 红色终点 */
+      color: white;
+    }
+    .cell.path {
+      background-color: #FFEB3B; /* 黄色路径 */
+    }
+    .cell label {
+      pointer-events: none;
+      font-size: 10px;
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+
+<div id="container">
+  <!-- 左侧操作栏 -->
+  <div id="sidebar">
+    <h2>操作区</h2>
+    <h3>1. 导入 JSON</h3>
+    <textarea id="jsonInput" placeholder="在此粘贴 JSON"></textarea>
+    <button id="parseJsonBtn">解析并生成网格</button>
+
+    <h3>2. 交互操作</h3>
+    <button id="setWallBtn">切换/取消墙</button>
+    <br>
+    <button id="setStartBtn">设置起点</button>
+    <button id="setEndBtn">设置终点</button>
+    <button id="findPathBtn">A* 寻路</button>
+    <br>
+    <button id="renameBtn">给格子命名</button>
+    <input type="text" id="nameInput" placeholder="自定义名称..." />
+    <button id="findNamedBtn">标记到该名称</button>
+    <br>
+    <button id="resetPathBtn">重置路径</button>
+    <button id="clearAllBtn">清空全部</button>
+    <button id="exportJsonBtn">导出 JSON</button>
+    <!-- 新增3D模型相关按钮和容器 -->
+    <h3>3. 3D 模型</h3>
+    <div id="threejs-container" style="width: 100%; height: 300px; background: #f0f0f0; margin-top: 10px;"></div>
+    <button id="export3dModelBtn">导出/生成 3D 模型</button>
+
+  </div>
+
+  <!-- 右侧网格显示区 -->
+  <div id="gridWrapper">
+    <div id="grid"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+<script>
+/********************************************************************
+ * 全局数据
+ ********************************************************************/
+// 新增：全局记录导入的原始JSON、以及寻路得到的最后一条路径
+let originalJsonData = null;
+let lastPath = [];
+
+let gridData = [];
+let ROWS = 120, COLS = 200;   // 网格大小
+// 将网格最大尺寸限制为 200×200
+const maxCols = 200;
+const maxRows = 200;
+
+// 用于记录 bounding box
+let minX=Infinity, maxX=-Infinity;
+let minY=Infinity, maxY=-Infinity;
+// 缩放
+let scaleX=1.0, scaleY=1.0;
+
+// DOM
+const gridContainer = document.getElementById("grid");
+const gridWrapper = document.getElementById("gridWrapper");
+
+// 当前编辑模式
+let currentMode = null;
+let startCell = null;
+let endCell = null;
+
+/********************************************************************
+ * 1. 解析 JSON 并生成网格
+ ********************************************************************/
+function parseAndGenerateGrid() {
+  const input = document.getElementById("jsonInput").value.trim();
+  if(!input){
+    alert("请先粘贴 JSON！");
+    return;
+  }
+  let data;
+  try {
+    data = JSON.parse(input);
+  } catch(e){
+    alert("JSON 格式错误：" + e);
+    return;
+  }
+  // 关键：把解析后的数据存到全局 originalJsonData，供 exportJson 使用
+  originalJsonData = data;  
+
+  const walls = data.walls || [];
+  const doors = data.doors || [];
+
+  // 1. 获取平面图边界
+  findGlobalBounds(walls, doors);
+
+  // 2. 计算网格行列 (不超过 200×200)
+  let w = Math.max(1, maxX - minX);
+  let h = Math.max(1, maxY - minY);
+  let tempCols = Math.ceil(w);
+  let tempRows = Math.ceil(h);
+
+  let ratio = 1.0;
+  if(tempCols > maxCols){
+    ratio = maxCols / tempCols;
+    tempCols = maxCols;
+    tempRows = Math.floor(tempRows * ratio);
+  }
+  if(tempRows > maxRows){
+    ratio = maxRows / tempRows;
+    tempRows = maxRows;
+    tempCols = Math.floor(tempCols * ratio);
+  }
+  COLS = tempCols;
+  ROWS = tempRows;
+
+  // 3. 计算缩放系数
+  scaleX = COLS / w;
+  scaleY = ROWS / h;
+
+  // 4. 创建空网格
+  createGridData(ROWS, COLS);
+
+  // 5. 先映射墙
+  markWallsOnGrid(walls);
+  // 6. 再映射门（以便覆盖墙）
+  markDoorsOnGrid(doors);
+
+  // 7. 生成 DOM & UI
+  renderGridDOM();
+  refreshGridUI();
+  fitGridToContainer(); // 让网格适应容器
+}
+
+function findGlobalBounds(walls, doors){
+  minX=Infinity; maxX=-Infinity;
+  minY=Infinity; maxY=-Infinity;
+
+  walls.forEach(w => {
+    if(!w.position || w.position.length<2) return;
+    w.position.forEach(pt=>{
+      const [x,y] = pt;
+      if(x<minX) minX=x;
+      if(x>maxX) maxX=x;
+      if(y<minY) minY=y;
+      if(y>maxY) maxY=y;
+    });
+  });
+
+  doors.forEach(d => {
+    if(!d.bbox || d.bbox.length<4) return;
+    d.bbox.forEach(pt=>{
+      const [x,y] = pt;
+      if(x<minX) minX=x;
+      if(x>maxX) maxX=x;
+      if(y<minY) minY=y;
+      if(y>maxY) maxY=y;
+    });
+  });
+
+  // 若无数据，做兜底
+  if(minX>maxX || minY>maxY){
+    minX=0; maxX=1;
+    minY=0; maxY=1;
+  }
+}
+
+function createGridData(rows, cols){
+  gridData = [];
+  for(let r=0; r<rows; r++){
+    const rowArr = [];
+    for(let c=0; c<cols; c++){
+      rowArr.push({
+        row: r,
+        col: c,
+        isWall: false,
+        isDoor: false,
+        isStart: false,
+        isEnd: false,
+        name: ""
+      });
+    }
+    gridData.push(rowArr);
+  }
+}
+
+/********************************************************************
+ * 2. 映射墙、门（线段相交方式 + 门覆盖墙）
+ ********************************************************************/
+function markWallsOnGrid(walls){
+  const wallThickness = 0.5; // 你可酌情增大
+  walls.forEach(w=>{
+    if(!w.position || w.position.length<2) return;
+    const [[x1,y1],[x2,y2]] = w.position;
+
+    for(let r=0; r<ROWS; r++){
+      for(let c=0; c<COLS; c++){
+        const [cellMinX, cellMinY] = cellWorldRect(r,c,false);
+        const [cellMaxX, cellMaxY] = cellWorldRect(r,c,true);
+
+        // 快速排除
+        const segMinX = Math.min(x1,x2), segMaxX = Math.max(x1,x2);
+        const segMinY = Math.min(y1,y2), segMaxY = Math.max(y1,y2);
+        if(!rectIntersect(cellMinX,cellMinY, cellMaxX,cellMaxY,
+                          segMinX,segMinY, segMaxX,segMaxY)) {
+          continue;
+        }
+        // 真正相交判断
+        if(lineRectIntersection(x1,y1,x2,y2, cellMinX,cellMinY,cellMaxX,cellMaxY, wallThickness)){
+          gridData[r][c].isWall = true;
+        }
+      }
+    }
+  });
+}
+
+function markDoorsOnGrid(doors){
+  doors.forEach(d=>{
+    if(!d.bbox || d.bbox.length<4) return;
+    let xs = d.bbox.map(pt=>pt[0]);
+    let ys = d.bbox.map(pt=>pt[1]);
+    const dMinX = Math.min(...xs), dMaxX = Math.max(...xs);
+    const dMinY = Math.min(...ys), dMaxY = Math.max(...ys);
+
+    for(let r=0; r<ROWS; r++){
+      for(let c=0; c<COLS; c++){
+        const [cellMinX, cellMinY] = cellWorldRect(r,c,false);
+        const [cellMaxX, cellMaxY] = cellWorldRect(r,c,true);
+
+        if(rectIntersect(cellMinX,cellMinY, cellMaxX,cellMaxY,
+                         dMinX,dMinY, dMaxX,dMaxY)){
+          // 若与门有交集，则标为 isDoor
+          gridData[r][c].isDoor = true;
+          // 并覆盖墙：让该处可通行
+          gridData[r][c].isWall = false;
+        }
+      }
+    }
+  });
+}
+
+/** 获取某个格子在世界坐标中的左上(默认)或右下(second=true) */
+function cellWorldRect(row, col, second=false){
+  const w = maxX - minX;
+  const h = maxY - minY;
+  const xFrac = second? (col+1)/COLS : col/COLS;
+  const yFrac = second? (row+1)/ROWS : row/ROWS;
+  const x = minX + w*xFrac;
+  const y = minY + h*yFrac;
+  return [x, y];
+}
+
+/** 两矩形是否相交 */
+function rectIntersect(AminX,AminY,AmaxX,AmaxY,
+                       BminX,BminY,BmaxX,BmaxY){
+  return !( AmaxX<BminX ||
+            AminX>BmaxX ||
+            AmaxY<BminY ||
+            AminY>BmaxY );
+}
+
+/** 线段与矩形相交检测 + thickness */
+function lineRectIntersection(x1,y1,x2,y2,
+                              rx1,ry1,rx2,ry2,
+                              thickness=0){
+  // 1) 如果线段任意端点在矩形内，则相交
+  if(pointInRect(x1,y1, rx1,ry1,rx2,ry2) ||
+     pointInRect(x2,y2, rx1,ry1,rx2,ry2)){
+    return true;
+  }
+  // 2) 判断与矩形4条边相交
+  if(lineSegmentIntersect(x1,y1,x2,y2, rx1,ry1, rx2,ry1, thickness)) return true;
+  if(lineSegmentIntersect(x1,y1,x2,y2, rx2,ry1, rx2,ry2, thickness)) return true;
+  if(lineSegmentIntersect(x1,y1,x2,y2, rx2,ry2, rx1,ry2, thickness)) return true;
+  if(lineSegmentIntersect(x1,y1,x2,y2, rx1,ry2, rx1,ry1, thickness)) return true;
+
+  return false;
+}
+
+function pointInRect(px,py, rx1,ry1, rx2,ry2){
+  return (px>=rx1 && px<=rx2 && py>=ry1 && py<=ry2);
+}
+
+/** 线段-线段相交/最近距离检测 */
+function lineSegmentIntersect(x1,y1,x2,y2,
+                              x3,y3,x4,y4,
+                              thickness=0){
+  // bounding box 快速排除
+  if(!rectIntersect(Math.min(x1,x2),Math.min(y1,y2),
+                    Math.max(x1,x2),Math.max(y1,y2),
+                    Math.min(x3,x4),Math.min(y3,y4),
+                    Math.max(x3,x4),Math.max(y3,y4))){
+    return false;
+  }
+
+  const denom = (y4-y3)*(x2-x1) - (x4-x3)*(y2-y1);
+  if(Math.abs(denom)<1e-8){
+    // 平行/重叠 => 比较最小距离
+    const dist=lineToLineMinDistance(x1,y1,x2,y2, x3,y3,x4,y4);
+    return dist<=thickness;
+  }
+  const ua = ((x4-x3)*(y1-y3)-(y4-y3)*(x1-x3))/denom;
+  const ub = ((x2-x1)*(y1-y3)-(y2-y1)*(x1-x3))/denom;
+  if(ua>=0&&ua<=1 && ub>=0&&ub<=1){
+    return true;
+  }
+  // 不相交 => 看最近距离
+  const dist=segmentSegmentMinDistance(x1,y1,x2,y2, x3,y3,x4,y4);
+  return dist<=thickness;
+}
+
+function lineToLineMinDistance(x1,y1,x2,y2, x3,y3,x4,y4){
+  const d1=pointToSegmentDistance(x3,y3, x1,y1,x2,y2);
+  const d2=pointToSegmentDistance(x4,y4, x1,y1,x2,y2);
+  const d3=pointToSegmentDistance(x1,y1, x3,y3,x4,y4);
+  const d4=pointToSegmentDistance(x2,y2, x3,y3,x4,y4);
+  return Math.min(d1,d2,d3,d4);
+}
+
+function segmentSegmentMinDistance(x1,y1,x2,y2, x3,y3,x4,y4){
+  const d1=pointToSegmentDistance(x3,y3, x1,y1,x2,y2);
+  const d2=pointToSegmentDistance(x4,y4, x1,y1,x2,y2);
+  const d3=pointToSegmentDistance(x1,y1, x3,y3,x4,y4);
+  const d4=pointToSegmentDistance(x2,y2, x3,y3,x4,y4);
+  return Math.min(d1,d2,d3,d4);
+}
+
+/** 点到线段最短距离 */
+function pointToSegmentDistance(px,py, x1,y1,x2,y2){
+  const dx=x2-x1, dy=y2-y1;
+  const len2=dx*dx+dy*dy;
+  if(len2===0) return Math.hypot(px-x1,py-y1);
+  let t=((px-x1)*dx+(py-y1)*dy)/len2;
+  t=Math.max(0, Math.min(1,t));
+  const projX=x1+t*dx, projY=y1+t*dy;
+  return Math.hypot(px-projX, py-projY);
+}
+
+/********************************************************************
+ * 3. 生成 DOM & 刷新 UI
+ ********************************************************************/
+function renderGridDOM(){
+  gridContainer.innerHTML = "";
+  for(let r=0; r<ROWS; r++){
+    const rowDiv = document.createElement("div");
+    rowDiv.classList.add("row");
+    for(let c=0; c<COLS; c++){
+      const cellDiv = document.createElement("div");
+      cellDiv.classList.add("cell");
+      cellDiv.dataset.row=r;
+      cellDiv.dataset.col=c;
+      cellDiv.addEventListener("click", () => onCellClick(r,c));
+      rowDiv.appendChild(cellDiv);
+    }
+    gridContainer.appendChild(rowDiv);
+  }
+}
+
+function refreshGridUI(path=[]){
+  for(let r=0;r<ROWS;r++){
+    for(let c=0;c<COLS;c++){
+      const cellDiv = gridContainer.children[r].children[c];
+      const info = gridData[r][c];
+      // 重置
+      cellDiv.className="cell";
+
+      if(info.isWall) cellDiv.classList.add("wall");
+      if(info.isDoor) cellDiv.classList.add("door");
+      if(info.isStart){
+        cellDiv.classList.add("start");
+        cellDiv.textContent="S";
+      } else if(info.isEnd){
+        cellDiv.classList.add("end");
+        cellDiv.textContent="E";
+      } else {
+        cellDiv.textContent="";
+      }
+      // 路径
+      if(path.some(p => p.row===r && p.col===c)){
+        cellDiv.classList.add("path");
+      }
+      // 名称
+      if(info.name){
+        const label=document.createElement("label");
+        label.innerText=info.name;
+        cellDiv.appendChild(label);
+      }
+    }
+  }
+}
+
+/********************************************************************
+ * 4. 点击事件 + 手动设置
+ ********************************************************************/
+function onCellClick(r,c){
+  const cellInfo = gridData[r][c];
+  switch(currentMode){
+    case "wall":
+      cellInfo.isWall = !cellInfo.isWall;
+      if(cellInfo.isWall){
+        cellInfo.isStart=false;
+        cellInfo.isEnd=false;
+        cellInfo.isDoor=false; // 手动设墙时，也清掉门标记
+        if(startCell && startCell.row===r && startCell.col===c) startCell=null;
+        if(endCell && endCell.row===r && endCell.col===c) endCell=null;
+      }
+      break;
+    case "start":
+      if(startCell){
+        gridData[startCell.row][startCell.col].isStart=false;
+      }
+      cellInfo.isWall=false;
+      cellInfo.isDoor=cellInfo.isDoor; // 若原先是门，可保留
+      cellInfo.isStart=true;
+      cellInfo.isEnd=false;
+      startCell={row:r,col:c};
+      break;
+    case "end":
+      if(endCell){
+        gridData[endCell.row][endCell.col].isEnd=false;
+      }
+      cellInfo.isWall=false;
+      cellInfo.isDoor=cellInfo.isDoor;
+      cellInfo.isStart=false;
+      cellInfo.isEnd=true;
+      endCell={row:r,col:c};
+      break;
+    case "rename":
+      const name=document.getElementById("nameInput").value.trim();
+      if(name){
+        cellInfo.name=name;
+      }
+      break;
+    default:
+      return;
+  }
+  refreshGridUI();
+}
+
+/********************************************************************
+ * 5. A* 寻路
+ ********************************************************************/
+function findPath(){
+  if(!startCell || !endCell){
+    alert("请先设置起点和终点！");
+    return;
+  }
+  const gCost=[];
+  for(let r=0;r<ROWS;r++){
+    gCost[r]=[];
+    for(let c=0;c<COLS;c++){
+      gCost[r][c]=Infinity;
+    }
+  }
+  const parentMap=new Map();
+  let openSet=[]; // 用来模拟最小堆
+
+  // 起点
+  gCost[startCell.row][startCell.col]=0;
+  openSet.push({
+    row:startCell.row,
+    col:startCell.col,
+    fCost: 0 + heuristic(startCell.row, startCell.col)
+  });
+
+  function heuristic(rr,cc){
+    // 曼哈顿距离
+    return Math.abs(rr-endCell.row)+Math.abs(cc-endCell.col);
+  }
+
+  let found=false;
+
+  while(openSet.length>0){
+    // 1. 找到 openSet 中 fCost 最小的节点
+    openSet.sort((a,b)=>a.fCost-b.fCost);
+    const current=openSet.shift();
+    if(current.row===endCell.row && current.col===endCell.col){
+      found=true; break;
+    }
+    // 2. 扩展相邻节点
+    const neighbors=[{dr:-1,dc:0},{dr:1,dc:0},{dr:0,dc:-1},{dr:0,dc:1}];
+    for(let d of neighbors){
+      const nr=current.row+d.dr;
+      const nc=current.col+d.dc;
+      if(nr<0||nr>=ROWS||nc<0||nc>=COLS) continue;
+      if(gridData[nr][nc].isWall) continue; // 墙不能通过
+
+      // 新gCost
+      const tempG=gCost[current.row][current.col]+1;
+      if(tempG<gCost[nr][nc]){
+        gCost[nr][nc]=tempG;
+        const h=heuristic(nr,nc);
+        const f=tempG+h;
+        parentMap.set(`${nr},${nc}`, {row:current.row,col:current.col});
+
+        // 更新openSet
+        const idx=openSet.findIndex(n=>n.row===nr&&n.col===nc);
+        if(idx>=0) openSet.splice(idx,1); // remove old
+        openSet.push({row:nr,col:nc,fCost:f});
+      }
+    }
+  }
+
+  let path=[];
+  if(found){
+    let p={row:endCell.row,col:endCell.col};
+    while(p){
+      path.push(p);
+      p=parentMap.get(`${p.row},${p.col}`);
+    }
+    path.reverse();
+  } else {
+    alert("未找到可行路径！");
+  }
+
+  // 关键：将找到的路径保存在全局 lastPath，以供 exportJson 使用
+  lastPath = path;
+
+  refreshGridUI(path);
+}
+
+/********************************************************************
+ * 6. 辅助：重置、清空、按名称查找
+ ********************************************************************/
+function resetPath(){
+  refreshGridUI([]);
+  // 也清空 lastPath，避免导出时报错
+  lastPath = [];
+}
+
+function clearAll(){
+  startCell=null;
+  endCell=null;
+  for(let r=0;r<ROWS;r++){
+    for(let c=0;c<COLS;c++){
+      gridData[r][c].isWall=false;
+      gridData[r][c].isDoor=false;
+      gridData[r][c].isStart=false;
+      gridData[r][c].isEnd=false;
+      gridData[r][c].name="";
+    }
+  }
+  lastPath = [];
+  refreshGridUI();
+}
+
+function findNamedCell(){
+  const name=document.getElementById("nameInput").value.trim();
+  if(!name)return;
+  let found=null;
+  for(let r=0;r<ROWS;r++){
+    for(let c=0;c<COLS;c++){
+      if(gridData[r][c].name===name){
+        found={row:r,col:c};
+        break;
+      }
+    }
+    if(found)break;
+  }
+  if(!found){
+    alert(`未找到名为 "${name}" 的格子`);
+  }else{
+    alert(`找到 "${name}"，在行${found.row} 列${found.col}`);
+  }
+}
+
+/********************************************************************
+ * 7. 自动缩放 gridContainer 以适配 gridWrapper
+ ********************************************************************/
+function fitGridToContainer(){
+  gridContainer.style.transform="none";
+  const gridRect=gridContainer.getBoundingClientRect();
+  const wrapperRect=gridWrapper.getBoundingClientRect();
+
+  let scale=1;
+  const scaleX=wrapperRect.width / gridRect.width;
+  const scaleY=wrapperRect.height / gridRect.height;
+  // 只缩小不放大
+  scale=Math.min(scaleX, scaleY, 1);
+
+  gridContainer.style.transform=`scale(${scale})`;
+}
+
+/** 当窗口尺寸变化时再自适应 */
+window.addEventListener("resize", fitGridToContainer);
+
+
+/********************************************************************
+ * 8. 导出 JSON 功能
+ ********************************************************************/
+function exportJson() {
+  // 1) 判断是否已成功导入原始数据
+  if(!originalJsonData){
+    alert("请先导入并生成网格！");
+    return;
+  }
+  // 2) 判断是否有可用路径
+  if(!lastPath || lastPath.length === 0){
+    alert("当前没有可导出的路径，请先进行寻路。");
+    return;
+  }
+
+  // 3) 反向映射：从 row,col -> 原始平面 (x,y)
+  const footpoints = lastPath.map(cell => {
+    const [cx, cy] = cellCenterToWorld(cell.row, cell.col);
+    return { name: "footpoint", x: cx, y: cy };
+  });
+
+  // 4) 覆盖或添加 footpoint 到原始数据
+  originalJsonData.footpoint = footpoints;
+
+  // 5) 生成 JSON 并下载
+  const outStr = JSON.stringify(originalJsonData, null, 2);
+  const blob = new Blob([outStr], {type: "application/json"});
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "export.json";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** 获取网格单元中心在原始坐标系下的 (x,y) */
+function cellCenterToWorld(r,c){
+  const w = (maxX - minX);
+  const h = (maxY - minY);
+  const xFrac = (c + 0.5)/COLS;
+  const yFrac = (r + 0.5)/ROWS;
+  const x = minX + w*xFrac;
+  const y = minY + h*yFrac;
+  return [x, y];
+}
+
+/********************************************************************
+ * 9. 导出 3D JSON 功能
+ ********************************************************************/
+function export3DModel() {
+  if(!gridData || gridData.length === 0){
+    alert("网格数据为空，请先生成网格！");
+    return;
+  }
+
+  const grid3D = gridData.map((row, r) => row.map((cell, c) => {
+    if(cell.isWall){
+      return { height: 50, color: "#666" };
+    } else if(cell.isDoor){
+      return { height: 50, color: "#87CEFA" };
+    } else if(lastPath.some(p => p.row === r && p.col === c)){
+      return { height: 30, color: "#FFEB3B" };
+    } else if(cell === startCell){
+      return { height: 0, color: "#4CAF50" };
+    } else if(cell === endCell){
+      return { height: 0, color: "#F44336" };
+    } else {
+      return { height: 0, color: "#f9f9f9" };
+    }
+  }));
+
+  // 直接生成3D模型
+  generate3DTerrain(grid3D);
+}
+
+// 绑定导出3D模型按钮事件
+document.getElementById('export3dModelBtn').addEventListener('click', export3DModel);
+
+function generate3DTerrain(grid) {
+  // 清除旧地形
+  scene3D.children.slice().forEach(obj => {
+    if (obj.type === 'Mesh') scene3D.remove(obj);
+  });
+
+  // 生成新地形
+  const cellSize = 2;
+  grid.forEach((row, x) => {
+    row.forEach((cell, z) => {
+      if (cell.height <= 0) return;
+
+      const geometry = new THREE.BoxGeometry(cellSize*0.9, cell.height, cellSize*0.9);
+      const material = new THREE.MeshPhongMaterial({ color: cell.color });
+      const cube = new THREE.Mesh(geometry, material);
+      
+      cube.position.set(
+        x*cellSize - (grid.length*cellSize)/2,
+        cell.height/2,
+        -z*cellSize + (row.length*cellSize)/2  // 注意这里添加了负号
+      );
+      
+      scene3D.add(cube);
+    });
+  });
+
+  document.getElementById('loading').style.display = 'none';
+}
+
+function initThreeJS() {
+  // 初始化场景
+  scene3D = new THREE.Scene();
+  camera3D = new THREE.PerspectiveCamera(75, 300/300, 0.1, 1000);
+  renderer3D = new THREE.WebGLRenderer({ antialias: true });
+  renderer3D.setSize(300, 300);
+  renderer3D.setClearColor(0xE0E0E0); // 浅灰色背景
+  
+  const container = document.getElementById('threejs-container');
+  container.appendChild(renderer3D.domElement);
+
+  // 初始化控制器和光源
+  controls3D = new THREE.OrbitControls(camera3D, renderer3D.domElement);
+  camera3D.position.set(15, 20, 15);
+  
+  // 修正相机角度，避免上下颠倒
+  camera3D.rotation.x = -Math.PI / 4;
+  
+  controls3D.update();
+  
+  scene3D.add(new THREE.AmbientLight(0xffffff, 0.5));
+  const light = new THREE.DirectionalLight(0xffffff, 0.8);
+  light.position.set(10, 20, 10);
+  scene3D.add(light);
+
+  // 动画循环
+  function animate() {
+    requestAnimationFrame(animate);
+    controls3D.update();
+    renderer3D.render(scene3D, camera3D);
+  }
+  animate();
+}
+
+/********************************************************************
+ * 10. 事件绑定 & 初始化
+ ********************************************************************/
+document.getElementById("parseJsonBtn").addEventListener("click", parseAndGenerateGrid);
+document.getElementById("setWallBtn").addEventListener("click", ()=>currentMode="wall");
+document.getElementById("setStartBtn").addEventListener("click", ()=>currentMode="start");
+document.getElementById("setEndBtn").addEventListener("click", ()=>currentMode="end");
+document.getElementById("renameBtn").addEventListener("click", ()=>currentMode="rename");
+document.getElementById("findNamedBtn").addEventListener("click", findNamedCell);
+document.getElementById("findPathBtn").addEventListener("click", findPath);
+document.getElementById("resetPathBtn").addEventListener("click", resetPath);
+document.getElementById("clearAllBtn").addEventListener("click", clearAll);
+document.getElementById("exportJsonBtn").addEventListener("click", exportJson);
+
+// 默认生成一个小网格避免空白
+createGridData(ROWS, COLS);
+renderGridDOM();
+refreshGridUI();
+fitGridToContainer();
+
+// 3D 模型相关代码
+let scene3D, camera3D, renderer3D, controls3D;
+
+initThreeJS();
+</script>
+</body>
+</html>

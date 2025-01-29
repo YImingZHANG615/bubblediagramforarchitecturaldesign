@@ -1,0 +1,109 @@
+body { 
+    display: flex; 
+    font-family: Arial, sans-serif; 
+}
+
+#sidebar  { 
+    width: 300px; 
+    padding: 10px;
+    background-color: #f0f0f0; 
+    border-right: 1px solid #636363; 
+    box-sizing: border-box; 
+}
+
+#sidebar2 { 
+    width: 1000px; 
+    padding: 10px;
+    background-color: #f0f0f0; 
+    border-right: 1px solid #636363; 
+    box-sizing: border-box; 
+}
+
+#drag-handle { 
+    width: 10px; 
+    height: 100%; 
+    background-color: #000000; 
+    position: left; 
+    cursor: ew-resize; 
+}
+
+#main-content { 
+    flex-grow: 1; 
+    flex-basis: calc(100% - 300px - 1000px); 
+    padding: 10px; 
+}
+
+.form-group { 
+    margin-bottom: 10px; 
+}
+
+label { 
+    display: block; 
+    margin-bottom: 5px; 
+}
+
+input, select, button { 
+    width: 100%; 
+    padding: 5px; 
+    box-sizing: border-box; 
+}
+
+button { 
+    margin-top: 5px; 
+}
+
+#boundary-name { 
+    margin-top: 10px; 
+}
+
+#chart { 
+    border: 1px solid #ccc; 
+}
+
+.slider-group { 
+    margin-bottom: 10px; 
+}
+
+.slider-group label { 
+    display: block; 
+    margin-bottom: 5px; 
+}
+
+.boundary-handle { 
+    fill: rgb(120, 31, 31); 
+    cursor: pointer; 
+}
+
+#vectorOutput { 
+    white-space: pre-wrap; 
+    background: #f9f9f9; 
+    padding: 10px; 
+    border: 1px solid #ccc; 
+    max-height: 200px; 
+    overflow-y: auto; 
+}
+
+#floorPlanCanvas {
+    border: 1px solid black;
+    display: none; 
+    margin-top: 10px;
+    max-width: 100%; 
+    height: auto;
+}
+
+.selected-link { 
+    background: #eef; 
+}
+
+.boundary-polygon {
+    fill: none; 
+    stroke: #000; 
+    stroke-width: 2px; 
+}
+
+#preview {
+    max-width: 100%;
+    max-height: 200px; 
+    object-fit: contain; 
+    display: none; 
+}
