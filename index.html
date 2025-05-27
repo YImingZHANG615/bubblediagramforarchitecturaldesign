@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>手绘建筑平面位图分析与图结构（泡泡图）重构再设计系统</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #4F46E5;
+            --primary-hover: #4338CA;
+            --secondary-color: #06B6D4;
+            --text-primary: #1F2937;
+            --text-secondary: #6B7280;
+            --bg-white: #FFFFFF;
+            --bg-gray: #F9FAFB;
+            --border-color: #E5E7EB;
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            --transition: all 0.3s ease;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: var(--text-primary);
+            background: var(--bg-white);
+            overflow-x: hidden;
+        }
+
+        /* 导航栏 */
+        .navbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            box-shadow: var(--shadow-sm);
+            transition: var(--transition);
+        }
+
+        .navbar-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            max-width: 600px;
+        }
+
+        .logo span {
+            line-height: 1.3;
+        }
+
+        .logo i {
+            font-size: 1.75rem;
+            flex-shrink: 0;
+        }
+
+        .language-switch {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .lang-btn {
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--border-color);
+            background: var(--bg-white);
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: var(--transition);
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .lang-btn:hover {
+            background: var(--bg-gray);
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+
+        .lang-btn.active {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        /* Hero Section */
+        .hero-section {
+            margin-top: 80px;
+            padding: 4rem 2rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+        }
+
+        .hero-content {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .hero-title {
+            font-size: 3.5rem;
+            font-weight: 800;
+            margin-bottom: 1.5rem;
+            line-height: 1.2;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .hero-subtitle {
+            font-size: 1.5rem;
+            font-weight: 300;
+            margin-bottom: 2rem;
+            opacity: 0.9;
+        }
+
+        .hero-description {
+            font-size: 1.125rem;
+            line-height: 1.8;
+            opacity: 0.85;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* Video Section */
+        .video-section {
+            padding: 5rem 2rem;
+            background: var(--bg-gray);
+        }
+
+        .video-container {
+            max-width: 1000px;
+            margin: 0 auto;
+            text-align: center;
+        }
+
+        .section-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            color: var(--text-primary);
+        }
+
+        .section-subtitle {
+            font-size: 1.125rem;
+            color: var(--text-secondary);
+            margin-bottom: 3rem;
+        }
+
+        .video-placeholder {
+            position: relative;
+            width: 100%;
+            padding-bottom: 56.25%; /* 16:9 比例 */
+            background: #000;
+            border-radius: 1rem;
+            overflow: hidden;
+            box-shadow: var(--shadow-xl);
+            transition: var(--transition);
+        }
+
+        .video-placeholder:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 25px 30px -10px rgba(0, 0, 0, 0.15);
+        }
+
+        .video-placeholder video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: #000;
+        }
+
+        .youtube-link {
+            display: block;
+            margin-top: 2rem;
+            text-align: center;
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: 500;
+            transition: var(--transition);
+        }
+
+        .youtube-link:hover {
+            color: var(--primary-hover);
+            text-decoration: underline;
+        }
+
+        /* Features Section */
+        .features-section {
+            padding: 5rem 2rem;
+            background: white;
+        }
+
+        .features-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+
+        .feature-card {
+            background: var(--bg-gray);
+            padding: 2rem;
+            border-radius: 1rem;
+            transition: var(--transition);
+            border: 1px solid transparent;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: var(--shadow-lg);
+            border-color: var(--primary-color);
+            background: white;
+        }
+
+        .feature-icon {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            border-radius: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+            box-shadow: var(--shadow-md);
+        }
+
+        .feature-icon i {
+            font-size: 1.75rem;
+            color: white;
+        }
+
+        .feature-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--text-primary);
+        }
+
+        .feature-description {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            line-height: 1.8;
+        }
+
+        .feature-list {
+            margin-top: 1rem;
+            list-style: none;
+        }
+
+        .feature-list li {
+            padding: 0.5rem 0;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+
+        .feature-list li i {
+            color: var(--secondary-color);
+            margin-top: 0.25rem;
+            flex-shrink: 0;
+        }
+
+        /* Story Section */
+        .story-section {
+            padding: 5rem 2rem;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        }
+
+        .story-container {
+            max-width: 800px;
+            margin: 0 auto;
+            text-align: center;
+        }
+
+        .story-content {
+            background: white;
+            padding: 3rem;
+            border-radius: 1rem;
+            box-shadow: var(--shadow-xl);
+            margin-top: 2rem;
+        }
+
+        .story-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 2rem;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .story-icon i {
+            font-size: 2.5rem;
+            color: white;
+        }
+
+        .story-text {
+            font-size: 1.125rem;
+            line-height: 1.8;
+            color: var(--text-secondary);
+            text-align: left;
+        }
+
+        .story-text p {
+            margin-bottom: 1rem;
+        }
+
+        .highlight {
+            color: var(--primary-color);
+            font-weight: 600;
+        }
+
+        /* CTA Section */
+        .cta-section {
+            padding: 6rem 2rem;
+            background: white;
+            text-align: center;
+        }
+
+        .cta-container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .cta-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            color: var(--text-primary);
+        }
+
+        .cta-description {
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+            margin-bottom: 3rem;
+            line-height: 1.8;
+        }
+
+        .cta-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1.5rem 3.5rem;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            text-decoration: none;
+            border-radius: 1rem;
+            font-size: 1.5rem;
+            font-weight: 700;
+            box-shadow: var(--shadow-xl);
+            transition: var(--transition);
+            border: none;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .cta-button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .cta-button:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 30px 40px -15px rgba(0, 0, 0, 0.2);
+        }
+
+        .cta-button:hover::before {
+            left: 100%;
+        }
+
+        .cta-button i {
+            font-size: 1.75rem;
+            transition: transform 0.3s;
+        }
+
+        .cta-button:hover i {
+            transform: translateX(5px);
+        }
+
+        /* 添加脉冲动画效果 */
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.4);
+            }
+            70% {
+                box-shadow: 0 0 0 15px rgba(79, 70, 229, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(79, 70, 229, 0);
+            }
+        }
+
+        .cta-button {
+            animation: pulse 2s infinite;
+        }
+
+        /* Footer */
+        .footer {
+            padding: 3rem 2rem;
+            background: var(--bg-gray);
+            text-align: center;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .footer-content {
+            max-width: 800px;
+            margin: 0 auto;
+            color: var(--text-secondary);
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .footer-link {
+            color: var(--text-secondary);
+            text-decoration: none;
+            transition: var(--transition);
+        }
+
+        .footer-link:hover {
+            color: var(--primary-color);
+        }
+
+        .footer-content p {
+            margin: 0.5rem 0;
+        }
+
+        .footer-subtitle {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-top: 1rem !important;
+        }
+
+        .footer-tagline {
+            font-size: 0.875rem;
+            font-style: italic;
+            opacity: 0.8;
+        }
+
+        .footer-email {
+            font-size: 0.9375rem;
+            margin: 0.75rem 0 !important;
+        }
+
+        .footer-email i {
+            margin-right: 0.5rem;
+            color: var(--primary-color);
+        }
+
+        .email-link {
+            color: var(--text-secondary);
+            text-decoration: none;
+            transition: var(--transition);
+        }
+
+        .email-link:hover {
+            color: var(--primary-color);
+            text-decoration: underline;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 1200px) {
+            .navbar-content {
+                flex-direction: column;
+                gap: 1rem;
+                padding: 1rem;
+            }
+
+            .logo {
+                font-size: 1.125rem;
+                text-align: center;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .logo {
+                font-size: 1rem;
+                max-width: 100%;
+            }
+
+            .logo i {
+                font-size: 1.5rem;
+            }
+
+            .hero-title {
+                font-size: 2.5rem;
+            }
+
+            .hero-subtitle {
+                font-size: 1.25rem;
+            }
+
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .section-title {
+                font-size: 2rem;
+            }
+
+            .navbar-content {
+                padding: 1rem;
+            }
+
+            .story-content {
+                padding: 2rem;
+            }
+
+            .cta-button {
+                font-size: 1.25rem;
+                padding: 1.25rem 2.5rem;
+                width: 90%;
+                max-width: 400px;
+            }
+
+            .cta-button i {
+                font-size: 1.5rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .cta-button {
+                font-size: 1.125rem;
+                padding: 1rem 2rem;
+                width: 95%;
+            }
+        }
+
+        /* 动画效果 */
+        .fade-in {
+            animation: fadeIn 0.6s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        /* 九宫格图片布局样式 */
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+            margin: 2rem 0;
+            border-radius: 1rem;
+        }
+
+        .grid-image {
+            width: 100%;
+            aspect-ratio: 4/3;
+            object-fit: contain;
+            border-radius: 0.5rem;
+            transition: transform 0.3s ease;
+            cursor: pointer;
+        }
+
+        .center-image {
+            object-fit: contain;
+            width: 100%;
+            height: 100%;
+            aspect-ratio: auto;
+        }
+
+        .grid-image:hover {
+            transform: scale(1.02);
+        }
+
+        .image-caption {
+            text-align: center;
+            font-size: 1.125rem;
+            color: var(--text-secondary);
+            margin-top: 1.5rem;
+            font-weight: 500;
+        }
+
+        /* 响应式布局调整 */
+        @media (max-width: 768px) {
+            .image-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 1rem;
+            }
+            
+            .center-image {
+                grid-column: span 2;
+                width: 100%;
+                max-height: 400px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .image-grid {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+            
+            .grid-image {
+                width: 100%;
+            }
+            
+            .center-image {
+                grid-column: auto;
+                width: 100%;
+                max-height: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar">
+        <div class="navbar-content">
+            <div class="logo">
+                <i class="fas fa-drafting-compass"></i>
+                <span data-zh="手绘建筑平面位图分析与图结构重构再设计系统" data-en="Hand-drawn Architectural Bitmap Analysis and Bubble Diagram Reconstruction System">Hand-drawn Architectural Bitmap Analysis and Bubble Diagram Reconstruction System</span>
+            </div>
+                <div class="language-switch">
+                <button class="lang-btn" data-lang="zh">中文</button>
+                <button class="lang-btn active" data-lang="en">English</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero-section">
+        <div class="hero-content fade-in">
+            <h1 class="hero-title" data-zh="让建筑设计更智能" data-en="Making Architectural Design Smarter">让建筑设计更智能</h1>
+            <p class="hero-subtitle" data-zh="手绘建筑平面位图分析与图结构（泡泡图）重构再设计系统" data-en="Hand-drawn Architectural Bitmap Analysis and Bubble Diagram Reconstruction System">手绘建筑平面位图分析与图结构（泡泡图）重构再设计系统</p>
+            <p class="hero-description" data-zh="基于语义分割技术，将手绘平面位图转化为可编辑的矢量数据，提取图结构关系生成泡泡图，实现三维空间重建、视域分析和路径规划等高级功能" data-en="Based on semantic segmentation technology, transform hand-drawn architectural bitmaps into editable vector data, extract graph structure relationships to generate bubble diagrams, and enable 3D spatial reconstruction, visibility analysis, and path planning">基于语义分割技术，将手绘平面位图转化为可编辑的矢量数据，提取图结构关系生成泡泡图，实现三维空间重建、视域分析和路径规划等高级功能</p>
+                        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta-section">
+        <div class="cta-container fade-in">
+            <h2 class="cta-title" data-zh="开始体验智能设计" data-en="Start Your Smart Design Journey">开始体验智能设计</h2>
+            <p class="cta-description" data-zh="立即进入系统，探索建筑设计的无限可能" data-en="Enter the system now and explore the infinite possibilities of architectural design">立即进入系统，探索建筑设计的无限可能</p>
+            <button class="cta-button" onclick="window.location.href='main.html'">
+                <span data-zh="进入系统" data-en="Enter System">进入系统</span>
+                <i class="fas fa-arrow-right"></i>
+            </button>
+        </div>
+    </section>
+
+    <!-- Video Section -->
+    <section class="video-section">
+        <div class="video-container fade-in">
+            <h2 class="section-title" data-zh="产品演示" data-en="Product Demo">产品演示</h2>
+            <p class="section-subtitle" data-zh="观看完整的功能演示视频，了解系统如何工作" data-en="Watch the complete feature demo video to understand how the system works">观看完整的功能演示视频，了解系统如何工作</p>
+            
+            <div class="video-placeholder">
+                <video id="demoVideo" controls style="width: 100%; height: 100%; object-fit: cover; border-radius: 1rem;">
+                    <source src="demo.mp4" type="video/mp4">
+                    <p data-zh="您的浏览器不支持视频播放。" data-en="Your browser does not support video playback.">您的浏览器不支持视频播放。</p>
+                </video>
+            </div>
+            <a href="https://youtu.be/sQHs9k29fsQ" target="_blank" class="youtube-link">
+                <i class="fab fa-youtube"></i> 在 YouTube 上观看完整视频
+            </a>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features-section">
+        <div class="features-container">
+            <h2 class="section-title text-center" data-zh="核心功能" data-en="Core Features">核心功能</h2>
+            <p class="section-subtitle text-center" data-zh="为建筑设计师提供全方位的智能辅助工具" data-en="Providing comprehensive intelligent assistance tools for architects">为建筑设计师提供全方位的智能辅助工具</p>
+            
+            <div class="features-grid">
+                <div class="feature-card fade-in">
+                    <div class="feature-icon">
+                        <i class="fas fa-magic"></i>
+                    </div>
+                    <h3 class="feature-title" data-zh="智能矢量化" data-en="Intelligent Vectorization">智能矢量化</h3>
+                    <p class="feature-description" data-zh="基于深度学习的语义分割技术，自动识别手绘平面图中的建筑元素" data-en="Deep learning-based semantic segmentation technology automatically identifies architectural elements in hand-drawn floor plans">基于深度学习的语义分割技术，自动识别手绘平面图中的建筑元素</p>
+                    <ul class="feature-list">
+                        <li><i class="fas fa-check"></i> <span data-zh="墙体自动识别" data-en="Automatic wall recognition">墙体自动识别</span></li>
+                        <li><i class="fas fa-check"></i> <span data-zh="门窗精确定位" data-en="Precise door and window positioning">门窗精确定位</span></li>
+                        <li><i class="fas fa-check"></i> <span data-zh="房间边界提取" data-en="Room boundary extraction">房间边界提取</span></li>
+                    </ul>
+                    </div>
+
+                <div class="feature-card fade-in">
+                    <div class="feature-icon">
+                        <i class="fas fa-cube"></i>
+                    </div>
+                    <h3 class="feature-title" data-zh="三维重建" data-en="3D Reconstruction">三维重建</h3>
+                    <p class="feature-description" data-en="Based on Three.js engine, convert 2D floor plans into interactive 3D models">基于Three.js引擎，将二维平面图转换为可交互的三维模型</p>
+                    <ul class="feature-list">
+                        <li><i class="fas fa-check"></i> <span data-zh="实时3D渲染" data-en="Real-time 3D rendering">实时3D渲染</span></li>
+                        <li><i class="fas fa-check"></i> <span data-zh="多角度查看" data-en="Multi-angle viewing">多角度查看</span></li>
+                        <li><i class="fas fa-check"></i> <span data-zh="空间漫游体验" data-en="Spatial navigation experience">空间漫游体验</span></li>
+                    </ul>
+                        </div>
+
+                <div class="feature-card fade-in">
+                    <div class="feature-icon">
+                        <i class="fas fa-eye"></i>
+                    </div>
+                    <h3 class="feature-title" data-zh="视域分析" data-en="Visibility Analysis">视域分析</h3>
+                    <p class="feature-description" data-zh="分析任意位置的可视范围，优化空间布局和功能分区" data-en="Analyze the visible range from any position to optimize spatial layout and functional zoning">分析任意位置的可视范围，优化空间布局和功能分区</p>
+                    <ul class="feature-list">
+                        <li><i class="fas fa-check"></i> <span data-zh="可视范围计算" data-en="Visibility range calculation">可视范围计算</span></li>
+                        <li><i class="fas fa-check"></i> <span data-zh="视线遮挡分析" data-en="Line of sight occlusion analysis">视线遮挡分析</span></li>
+                        <li><i class="fas fa-check"></i> <span data-zh="空间私密性评估" data-en="Spatial privacy assessment">空间私密性评估</span></li>
+                    </ul>
+                        </div>
+
+                <div class="feature-card fade-in">
+                    <div class="feature-icon">
+                        <i class="fas fa-route"></i>
+                    </div>
+                    <h3 class="feature-title" data-zh="路径规划" data-en="Path Planning">路径规划</h3>
+                    <p class="feature-description" data-zh="智能寻路算法，计算建筑内部最优路径，辅助流线设计" data-en="Intelligent pathfinding algorithm calculates optimal paths within buildings to assist circulation design">智能寻路算法，计算建筑内部最优路径，辅助流线设计</p>
+                    <ul class="feature-list">
+                        <li><i class="fas fa-check"></i> <span data-zh="最短路径计算" data-en="Shortest path calculation">最短路径计算</span></li>
+                        <li><i class="fas fa-check"></i> <span data-zh="疏散路线规划" data-en="Evacuation route planning">疏散路线规划</span></li>
+                        <li><i class="fas fa-check"></i> <span data-zh="流线优化建议" data-en="Circulation optimization suggestions">流线优化建议</span></li>
+                    </ul>
+                </div>
+
+                <div class="feature-card fade-in">
+                    <div class="feature-icon">
+                        <i class="fas fa-project-diagram"></i>
+                    </div>
+                    <h3 class="feature-title" data-zh="图结构分析" data-en="Graph Structure Analysis">图结构分析</h3>
+                    <p class="feature-description" data-zh="提取房间之间的拓扑关系，生成可编辑的泡泡图" data-en="Extract topological relationships between rooms and generate editable bubble diagrams">提取房间之间的拓扑关系，生成可编辑的泡泡图</p>
+                    <ul class="feature-list">
+                        <li><i class="fas fa-check"></i> <span data-zh="空间邻接关系" data-en="Spatial adjacency relationships">空间邻接关系</span></li>
+                        <li><i class="fas fa-check"></i> <span data-zh="功能组织优化" data-en="Functional organization optimization">功能组织优化</span></li>
+                        <li><i class="fas fa-check"></i> <span data-zh="布局重构设计" data-en="Layout reconstruction design">布局重构设计</span></li>
+                    </ul>
+                </div>
+
+                <div class="feature-card fade-in">
+                    <div class="feature-icon">
+                        <i class="fas fa-file-excel"></i>
+                    </div>
+                    <h3 class="feature-title" data-zh="数据交换" data-en="Data Exchange">数据交换</h3>
+                    <p class="feature-description" data-zh="支持多种数据格式导入导出，与其他设计工具无缝对接" data-en="Support multiple data format import and export, seamlessly integrate with other design tools">支持多种数据格式导入导出，与其他设计工具无缝对接</p>
+                    <ul class="feature-list">
+                        <li><i class="fas fa-check"></i> <span data-zh="Excel数据导入导出" data-en="Excel data import/export">Excel数据导入导出</span></li>
+                        <li><i class="fas fa-check"></i> <span data-zh="JSON格式支持" data-en="JSON format support">JSON格式支持</span></li>
+                        <li><i class="fas fa-check"></i> <span data-zh="图像批量处理" data-en="Batch image processing">图像批量处理</span></li>
+                    </ul>
+                            </div>
+                        </div>
+                    </div>
+    </section>
+
+    <!-- Story Section -->
+    <section class="story-section">
+        <div class="story-container fade-in">
+            <h2 class="section-title" data-zh="项目起源" data-en="Project Origin">项目起源</h2>
+            <p class="section-subtitle" data-zh="一个来自实践的创新工具" data-en="An innovative tool born from practice">一个来自实践的创新工具</p>
+            
+            <div class="story-content">
+                <div class="story-icon">
+                    <i class="fas fa-lightbulb"></i>
+                </div>
+                <div class="story-text">
+                    <p data-zh="这个项目源于一个学校设计课题——一个住院部设计。在我初次接触医疗建筑设计时，面对复杂的医院平面功能组织感到无比困惑。传统的分析方法难以直观地展现各个功能空间之间错综复杂的关系，这让我意识到需要一个更智能的工具来辅助理解和优化建筑设计。" data-en="This project originated from a school design assignment - an inpatient department design. When I first encountered medical building design, I was overwhelmed by the complex functional organization of hospital floor plans. Traditional analysis methods struggled to intuitively display the intricate relationships between functional spaces, which made me realize the need for a smarter tool to assist in understanding and optimizing architectural design.">这个项目源于一个学校设计课题——一个住院部设计。在我初次接触医疗建筑设计时，面对复杂的医院平面功能组织感到无比困惑。传统的分析方法难以直观地展现各个功能空间之间错综复杂的关系，这让我意识到需要一个更智能的工具来辅助理解和优化建筑设计。</p>
+                    
+                    <p data-zh="经过深入研究和开发，这个工具应运而生。它不仅能够<span class='highlight'>识别和分析旧建筑的图结构关系</span>，为改造设计提供数据支持，还能帮助设计师<span class='highlight'>快速理解空间逻辑</span>，优化功能布局。" data-en="After extensive research and development, this tool was born. It can not only <span class='highlight'>identify and analyze the graph structure relationships of old buildings</span>, providing data support for renovation design, but also help designers <span class='highlight'>quickly understand spatial logic</span> and optimize functional layouts.">经过深入研究和开发，这个工具应运而生。它不仅能够<span class='highlight'>识别和分析旧建筑的图结构关系</span>，为改造设计提供数据支持，还能帮助设计师<span class='highlight'>快速理解空间逻辑</span>，优化功能布局。</p>
+                    
+                    <p data-zh="通过将<span class='highlight'>语义分割技术</span>应用于建筑设计领域，我们实现了从手绘草图到智能分析的跨越，让每一位设计师都能更高效地完成复杂的建筑设计任务。" data-en="By applying <span class='highlight'>semantic segmentation technology</span> to the field of architectural design, we have achieved a leap from hand-drawn sketches to intelligent analysis, enabling every designer to complete complex architectural design tasks more efficiently.">通过将<span class='highlight'>语义分割技术</span>应用于建筑设计领域，我们实现了从手绘草图到智能分析的跨越，让每一位设计师都能更高效地完成复杂的建筑设计任务。</p>
+
+                    <!-- 添加九宫格图片展示 -->
+                    <div class="image-grid">
+                        <img src="image/1.png" alt="设计课程应用场景1" class="grid-image">
+                        <img src="image/2.png" alt="设计课程应用场景2" class="grid-image">
+                        <img src="image/3.png" alt="设计课程应用场景3" class="grid-image">
+                        <img src="image/4.png" alt="设计课程应用场景4" class="grid-image">
+                        <img src="image/9.png" alt="设计课程应用场景9" class="grid-image center-image">
+                        <img src="image/5.png" alt="设计课程应用场景5" class="grid-image">
+                        <img src="image/6.png" alt="设计课程应用场景6" class="grid-image">
+                        <img src="image/7.png" alt="设计课程应用场景7" class="grid-image">
+                        <img src="image/8.png" alt="设计课程应用场景8" class="grid-image">
+                    </div>
+                    <p class="image-caption" data-zh="学校设计课中的应用" data-en="Application in School Design Course">学校设计课中的应用</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-links">
+                <a href="#" class="footer-link" data-zh="关于我们" data-en="About Us">关于我们</a>
+                <a href="mailto:ym20021117@gmail.com" class="footer-link" data-zh="联系方式" data-en="Contact">联系方式</a>
+                <a href="#" class="footer-link" data-zh="使用指南" data-en="User Guide">使用指南</a>
+                <a href="#" class="footer-link" data-zh="隐私政策" data-en="Privacy Policy">隐私政策</a>
+            </div>
+            <p data-zh="© 2024 张益铭 | 北京建筑大学" data-en="© 2024 Zhang Yiming | Beijing University of Civil Engineering and Architecture">© 2024 张益铭 | 北京建筑大学</p>
+            <p class="footer-email">
+                <i class="fas fa-envelope"></i>
+                <a href="mailto:ym20021117@gmail.com" class="email-link">ym20021117@gmail.com</a>
+            </p>
+            <p class="footer-subtitle" data-zh="手绘建筑平面位图分析与图结构（泡泡图）重构再设计系统" data-en="Hand-drawn Architectural Bitmap Analysis and Bubble Diagram Reconstruction System">手绘建筑平面位图分析与图结构（泡泡图）重构再设计系统</p>
+            <p class="footer-tagline" data-zh="让建筑设计更智能，让空间关系更清晰。" data-en="Making architectural design smarter and spatial relationships clearer.">让建筑设计更智能，让空间关系更清晰。</p>
+        </div>
+    </footer>
+
+    <script>
+        // 语言切换功能
+        const langBtns = document.querySelectorAll('.lang-btn');
+        let currentLang = 'en'; // 设置默认语言为英文
+
+        function switchLanguage(lang) {
+            currentLang = lang;
+            
+            // 更新按钮状态
+            langBtns.forEach(btn => {
+                if (btn.dataset.lang === lang) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+
+            // 更新所有带有语言标记的元素
+            document.querySelectorAll('[data-zh][data-en]').forEach(el => {
+                const text = el.getAttribute(`data-${lang}`);
+                if (text) {
+                    // 保留HTML标签
+                    if (el.innerHTML.includes('<')) {
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = text;
+                        el.innerHTML = tempDiv.innerHTML;
+                    } else {
+                        el.textContent = text;
+                    }
+                }
+            });
+        }
+
+        // 页面加载完成后立即切换到英文
+        document.addEventListener('DOMContentLoaded', () => {
+            switchLanguage('en');
+        });
+
+        langBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                switchLanguage(btn.dataset.lang);
+            });
+        });
+
+        // 滚动动画
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: '0px 0px -50px 0px'
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('fade-in');
+                    observer.unobserve(entry.target);
+                }
+            });
+        }, observerOptions);
+
+        // 观察所有需要动画的元素
+        document.querySelectorAll('.feature-card, .story-container, .cta-container').forEach(el => {
+            observer.observe(el);
+        });
+
+        // 平滑滚动
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>手绘建筑平面位图分析与图结构（泡泡图）重构再设计系统</title>
+    <link rel="stylesheet" href="main.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <i class="fas fa-building"></i>
+                <span data-en="Hand-drawn Architectural Bitmap Analysis and Bubble Diagram Reconstruction System" data-zh="手绘建筑平面位图分析与图结构重构再设计系统">手绘建筑平面位图分析与图结构重构再设计系统</span>
+            </div>
+            <nav class="nav-tabs">
+                <button class="nav-tab active" data-tab="bubble-editor">
+                    <i class="fas fa-project-diagram"></i>
+                    <span data-en="Bubble Editor" data-zh="泡泡图编辑">泡泡图编辑</span>
+                </button>
+                <button class="nav-tab" data-tab="integrated-analysis">
+                    <i class="fas fa-drafting-compass"></i>
+                    <span data-en="Integrated Analysis" data-zh="手绘平面图分析与重建">手绘平面图分析与重建</span>
+                </button>
+            </nav>
+            <div class="header-actions">
+                <!-- 语言切换按钮 -->
+                <div class="language-switch">
+                    <button id="lang-zh" class="btn btn-secondary">
+                        <i class="fas fa-language"></i>
+                        中文
+                    </button>
+                    <button id="lang-en" class="btn btn-secondary">
+                        <i class="fas fa-language"></i>
+                        English
+                    </button>
+                </div>
+                <button class="btn btn-secondary" id="save-project">
+                    <i class="fas fa-save"></i>
+                    <span data-en="Save Project" data-zh="保存项目">保存项目</span>
+                </button>
+                <button class="btn btn-primary" id="load-project">
+                    <i class="fas fa-folder-open"></i>
+                    <span data-en="Load Project" data-zh="加载项目">加载项目</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主要内容区域 -->
+    <main class="main-container">
+        <!-- 泡泡图编辑器 -->
+        <div id="bubble-editor" class="tab-content active">
+            <div class="workspace">
+                <!-- 左侧工具面板 -->
+                <aside class="sidebar left-sidebar">
+                    <div class="sidebar-header">
+                        <h3><i class="fas fa-tools"></i> <span data-en="Edit Tools" data-zh="编辑工具">编辑工具</span></h3>
+                    </div>
+                    
+                    <!-- 节点选择 -->
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h4><i class="fas fa-mouse-pointer"></i> <span data-en="Node Selection" data-zh="节点选择">节点选择</span></h4>
+                        </div>
+                        <div class="panel-content">
+                            <div class="form-group">
+                                <label for="select-node-input">
+                                    <span data-en="Node Name" data-zh="节点名称">节点名称</span>
+                                </label>
+                                <div class="input-group">
+                                    <input type="text" id="select-node-input" placeholder="输入节点名称">
+                                    <button id="select-node-button" class="btn btn-secondary">
+                                        <span data-en="Select Node" data-zh="选择节点">选择节点</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div id="node-info" class="node-info" style="display:none;">
+                                <div class="form-group">
+                                    <label for="node-name" data-en="Name" data-zh="名称">名称</label>
+                                    <input type="text" id="node-name" placeholder="节点名称">
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="node-radius" data-en="Radius(mm)" data-zh="半径(mm)">半径(mm)</label>
+                                        <input type="number" id="node-radius" min="1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="node-area" data-en="Area(m²)" data-zh="面积(m²)">面积(m²)</label>
+                                        <input type="number" id="node-area" step="0.000001" min="0">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="node-color" data-en="Color" data-zh="颜色">颜色</label>
+                                    <input type="color" id="node-color" value="#cccccc">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label data-en="Connected Nodes" data-zh="连接的节点">连接的节点</label>
+                                    <div id="links-list" class="links-list"></div>
+                                    <button class="btn btn-danger btn-sm" id="remove-selected-link">
+                                        <i class="fas fa-unlink"></i> <span data-en="Remove Connection" data-zh="删除选中连接">删除选中连接</span>
+                                    </button>
+                                </div>
+                                
+                                <div id="link-edit-panel" class="link-edit-panel" style="display:none;">
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label for="link-force-input" data-en="Connection Strength" data-zh="连接强度">连接强度</label>
+                                            <input type="number" id="link-force-input" step="0.1" value="1">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="link-distance-input" data-en="Distance" data-zh="距离">距离</label>
+                                            <input type="number" id="link-distance-input" step="10" value="100">
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-primary btn-sm" id="update-link">
+                                        <i class="fas fa-sync"></i> <span data-en="Update Connection" data-zh="更新连接">更新连接</span>
+                                    </button>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="new-link" data-en="Add Link To" data-zh="添加链接到">添加链接到</label>
+                                    <div class="input-group">
+                                        <select id="new-link"></select>
+                                        <button class="btn btn-primary" id="add-link">
+                                            <i class="fas fa-link"></i>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label data-en="Line Attraction" data-zh="线段吸引">线段吸引</label>
+                                    <select id="line-segment-select"></select>
+                                    <div class="input-group">
+                                        <input type="number" step="0.1" value="0" id="line-segment-attraction-input">
+                                        <button class="btn btn-primary" id="update-line-segment-attraction">
+                                            <i class="fas fa-magnet"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div class="action-buttons">
+                                    <button class="btn btn-primary" id="update">
+                                        <i class="fas fa-save"></i> <span data-en="Update" data-zh="更新节点">更新节点</span>
+                                    </button>
+                                    <button class="btn btn-danger" id="delete">
+                                        <i class="fas fa-trash"></i> <span data-en="Delete" data-zh="删除节点">删除节点</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <p id="no-selection" class="no-selection">
+                                <i class="fas fa-info-circle"></i>
+                                <span data-en="No node selected. Right-click a node or use the input above to select." data-zh="未选择任何节点。右键点击节点或使用上方输入框选择。">未选择任何节点。右键点击节点或使用上方输入框选择。</span>
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- 创建新节点 -->
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h4><i class="fas fa-plus-circle"></i> <span data-en="Create New Node" data-zh="创建新节点">创建新节点</span></h4>
+                        </div>
+                        <div class="panel-content">
+                            <div class="form-group">
+                                <label for="new-node-name" data-en="Name" data-zh="名称">名称</label>
+                                <input type="text" id="new-node-name" placeholder="节点名称">
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="new-node-radius" data-en="Radius(mm)" data-zh="半径(mm)">半径(mm)</label>
+                                    <input type="number" id="new-node-radius" value="30" min="1">
+                                </div>
+                                <div class="form-group">
+                                    <label for="new-node-area" data-en="Area(m²)" data-zh="面积(m²)">面积(m²)</label>
+                                    <input type="number" id="new-node-area" step="0.000001" min="0">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="new-node-color" data-en="Color" data-zh="颜色">颜色</label>
+                                <input type="color" id="new-node-color" value="#cccccc">
+                            </div>
+                            <button class="btn btn-primary btn-block" id="create-node">
+                                <i class="fas fa-plus"></i> <span data-en="Create Node" data-zh="创建节点">创建节点</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 全局颜色调整 -->
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h4><i class="fas fa-palette"></i> <span data-en="Global Color Adjustment" data-zh="全局颜色调整">全局颜色调整</span></h4>
+                        </div>
+                        <div class="panel-content">
+                            <div class="slider-group">
+                                <label><span data-en="Hue Rotation" data-zh="色相旋转">色相旋转</span>: <span id="hue-value">0</span>°</label>
+                                <input type="range" id="hue-slider" min="0" max="360" value="0" class="slider">
+                            </div>
+                            <div class="slider-group">
+                                <label><span data-en="Saturation Scale" data-zh="饱和度比例">饱和度比例</span>: <span id="sat-value">1</span></label>
+                                <input type="range" id="sat-slider" min="0" max="2" step="0.01" value="1" class="slider">
+                            </div>
+                            <div class="slider-group">
+                                <label><span data-en="Lightness Scale" data-zh="亮度比例">亮度比例</span>: <span id="light-value">1</span></label>
+                                <input type="range" id="light-slider" min="0" max="2" step="0.01" value="1" class="slider">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 边界设置 -->
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h4><i class="fas fa-vector-square"></i> <span data-en="Boundary Settings" data-zh="边界设置">边界设置</span></h4>
+                        </div>
+                        <div class="panel-content">
+                            <div class="form-group">
+                                <label for="boundary-type" data-en="Boundary Type" data-zh="边界类型">边界类型</label>
+                                <select id="boundary-type">
+                                    <option value="none" data-en="None" data-zh="无">无</option>
+                                    <option value="rectangle" data-en="Rectangle" data-zh="矩形">矩形</option>
+                                    <option value="triangle" data-en="Triangle" data-zh="三角形">三角形</option>
+                                </select>
+                            </div>
+                            <button class="btn btn-primary btn-block" id="apply-boundary">
+                                <i class="fas fa-check"></i> <span data-en="Apply Boundary" data-zh="应用边界">应用边界</span>
+                            </button>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="show-boundary" checked>
+                                    <span class="checkmark"></span>
+                                    <span data-en="Show Boundary" data-zh="显示边界">显示边界</span>
+                                </label>
+                                <p id="boundary-name" class="boundary-info" style="display:none;">
+                                    <span data-en="Boundary: Boundary1" data-zh="边界: 边界1">边界: 边界1</span>
+                                </p>
+                                <p class="help-text">
+                                    <i class="fas fa-info-circle"></i>
+                                    <span data-en="Shift+click empty space to add vertex, Shift+click handle to remove vertex" data-zh="Shift+点击空白处添加顶点，Shift+点击句柄移除顶点">Shift+点击空白处添加顶点，Shift+点击句柄移除顶点</span>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- 中央画布区域 -->
+                <div class="canvas-area">
+                    <div class="canvas-header">
+                        <h3><i class="fas fa-project-diagram"></i> <span data-en="Bubble Diagram Editor" data-zh="泡泡图编辑器">泡泡图编辑器</span></h3>
+                        <div class="canvas-controls">
+                            <button class="btn btn-secondary" id="zoom-in">
+                                <i class="fas fa-search-plus"></i>
+                            </button>
+                            <button class="btn btn-secondary" id="zoom-out">
+                                <i class="fas fa-search-minus"></i>
+                            </button>
+                            <button class="btn btn-secondary" id="reset-view">
+                                <i class="fas fa-expand-arrows-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="canvas-container">
+                        <svg id="chart" class="main-canvas">
+                            <g>
+                                <polygon class="boundary-polygon" style="display: none;"></polygon>
+                            </g>
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- 右侧功能面板 -->
+                <aside class="sidebar right-sidebar">
+                    <div class="sidebar-header">
+                        <h3><i class="fas fa-cogs"></i> <span data-en="Function Panel" data-zh="功能面板">功能面板</span></h3>
+                    </div>
+
+                    <!-- 村庄情况分析 改为 系统智能问答机器人 -->
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h4><i class="fas fa-robot"></i> <span data-en="AI Assistant" data-zh="系统智能问答机器人">系统智能问答机器人</span></h4>
+                        </div>
+                        <div class="panel-content">
+                            <div class="iframe-container">
+                                <iframe
+                                    src="https://village-generator.lovable.app/"
+                                    style="border:0; width: 100%; height: 300px;"
+                                    allowfullscreen=""
+                                    loading="lazy">
+                                </iframe>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 文件操作 -->
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h4><i class="fas fa-file"></i> <span data-en="File Operations" data-zh="文件操作">文件操作</span></h4>
+                        </div>
+                        <div class="panel-content">
+                            <div class="button-group">
+                                <button class="btn btn-primary" id="save-button">
+                                    <i class="fas fa-save"></i> <span data-en="Save JSON" data-zh="保存JSON">保存JSON</span>
+                                </button>
+                                <button class="btn btn-secondary" id="load-button">
+                                    <i class="fas fa-upload"></i> <span data-en="Load JSON" data-zh="加载JSON">加载JSON</span>
+                                </button>
+                                <input type="file" id="load-file" style="display:none">
+                            </div>
+                            <div class="button-group">
+                                <button class="btn btn-success" id="import-excel-button">
+                                    <i class="fas fa-file-excel"></i> <span data-en="Import Excel" data-zh="导入Excel">导入Excel</span>
+                                </button>
+                                <button class="btn btn-success" id="export-excel-button">
+                                    <i class="fas fa-download"></i> <span data-en="Export Excel" data-zh="导出Excel">导出Excel</span>
+                                </button>
+                                <input type="file" id="excel-file-input" style="display:none" accept=".xlsx,.xls,.csv">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 图片上传并转换为矢量信息 -->
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h4><i class="fas fa-image"></i> <span data-en="Image Vectorization" data-zh="图片矢量化">图片矢量化</span></h4>
+                        </div>
+                        <div class="panel-content">
+                            <div class="upload-area">
+                                <input type="file" id="imageUpload" accept="image/*" style="display:none">
+                                <button class="btn btn-secondary btn-block upload-btn" onclick="document.getElementById('imageUpload').click()">
+                                    <i class="fas fa-cloud-upload-alt"></i>
+                                    <span data-en="Select Image File" data-zh="选择图片文件">选择图片文件</span>
+                                </button>
+                            </div>
+                            <img id="preview" alt="预览" class="preview-image">
+                            <div id="loading" class="loading" style="display:none;">
+                                <i class="fas fa-spinner fa-spin"></i> <span data-en="Processing..." data-zh="正在处理...">正在处理...</span>
+                            </div>
+                            <div id="vectorOutput" class="vector-output"></div>
+                            <div id="error" class="error-message"></div>
+                            
+                            <div class="button-group" style="margin-top: 15px;">
+                                <button class="btn btn-primary btn-sm" id="copyJSONButton" style="display:none;">
+                                    <i class="fas fa-copy"></i> <span data-en="Copy JSON" data-zh="复制JSON">复制JSON</span>
+                                </button>
+                                <button class="btn btn-primary btn-sm" id="drawFloorPlanButton" style="display:none;">
+                                    <i class="fas fa-drafting-compass"></i> <span data-en="Generate Floor Plan" data-zh="生成平面图">生成平面图</span>
+                                </button>
+                                <button class="btn btn-success btn-sm" id="saveFloorPlanImage" style="display:none;">
+                                    <i class="fas fa-download"></i> <span data-en="Download Floor Plan" data-zh="下载平面图">下载平面图</span>
+                                </button>
+                                <button class="btn btn-success btn-sm" id="excelFromVectorOutput" style="display:none;">
+                                    <i class="fas fa-file-excel"></i> <span data-en="Generate Excel" data-zh="生成Excel">生成Excel</span>
+                                </button>
+                            </div>
+                            
+                            <div class="button-group" style="margin-top: 15px;">
+                                <button class="btn btn-info" id="visibilityAnalysisButton">
+                                    <i class="fas fa-eye"></i> <span data-en="Visibility Analysis" data-zh="视域分析">视域分析</span>
+                                </button>
+                                <button class="btn btn-warning" id="roadfindButton">
+                                    <i class="fas fa-route"></i> <span data-en="Pathfinding" data-zh="两点寻路">两点寻路</span>
+                                </button>
+                            </div>
+                            
+                            <canvas id="floorPlanCanvas" class="floor-plan-canvas"></canvas>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </div>
+    </main>
+
+    <!-- 引入 SheetJS & D3 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>

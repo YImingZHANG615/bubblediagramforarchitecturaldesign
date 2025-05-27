@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>手绘建筑平面位图分析与图结构重构再设计系统 - 分析模块</title>
+    <link rel="stylesheet" href="main.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* 专用样式 */
+        .analysis-container {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 80px);
+        }
+        
+        .analysis-tabs {
+            display: flex;
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 0 var(--spacing-4);
+        }
+        
+        .analysis-tab {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-2);
+            padding: var(--spacing-4) var(--spacing-5);
+            background: transparent;
+            border: none;
+            border-bottom: 3px solid transparent;
+            color: var(--gray-600);
+            font-size: var(--font-size-sm);
+            font-weight: 500;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+        
+        .analysis-tab:hover {
+            color: var(--gray-700);
+            background: var(--gray-50);
+        }
+        
+        .analysis-tab.active {
+            color: var(--primary-color);
+            border-bottom-color: var(--primary-color);
+            background: var(--gray-50);
+        }
+        
+        .analysis-content {
+            flex: 1;
+            display: none;
+            overflow: hidden;
+        }
+        
+        .analysis-content.active {
+            display: flex;
+        }
+        
+        .analysis-workspace {
+            display: flex;
+            flex: 1;
+            gap: var(--spacing-4);
+            padding: var(--spacing-4);
+            min-height: 0;
+        }
+        
+        .analysis-sidebar {
+            width: 350px;
+            min-width: 300px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-lg);
+            box-shadow: var(--shadow-sm);
+            overflow-y: auto;
+            max-height: calc(100vh - 160px);
+        }
+        
+        .analysis-main {
+            flex: 1;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-lg);
+            box-shadow: var(--shadow-sm);
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        
+        .analysis-main-header {
+            padding: var(--spacing-4) var(--spacing-5);
+            border-bottom: 1px solid var(--border-color);
+            background: var(--bg-tertiary);
+            border-radius: var(--border-radius-lg) var(--border-radius-lg) 0 0;
+        }
+        
+        .analysis-main-content {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            border-radius: 0 0 var(--border-radius-lg) var(--border-radius-lg);
+        }
+        
+        .canvas-3d {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        
+        .grid-wrapper {
+            flex: 1;
+            position: relative;
+            overflow: hidden;   /* 避免滚动溢出 */
+            background-color: #fff;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .grid-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            transform-origin: top left;
+            /* 将用 JS 来动态设置 scale(...) */
+        }
+        
+        .grid-cell {
+            width: 16px;
+            height: 16px;
+            border: 1px solid var(--border-color);
+            display: inline-block;
+            cursor: pointer;
+            box-sizing: border-box;
+        }
+        
+        .grid-cell.wall {
+            background-color: var(--gray-600);
+        }
+        
+        .grid-cell.door {
+            background-color: var(--warning-color);
+        }
+        
+        .grid-cell.start {
+            background-color: var(--success-color);
+        }
+        
+        .grid-cell.end {
+            background-color: var(--danger-color);
+        }
+        
+        .grid-cell.path {
+            background-color: var(--info-color);
+        }
+        
+        .grid-cell.visible {
+            background-color: rgba(99, 102, 241, 0.3);
+        }
+        
+        .visibility-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            background: var(--bg-primary);
+        }
+        
+        .json-input-area {
+            height: 200px;
+            resize: vertical;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: var(--font-size-sm);
+        }
+        
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--spacing-2);
+            padding: var(--spacing-2) var(--spacing-3);
+            border-radius: var(--border-radius);
+            font-size: var(--font-size-xs);
+            font-weight: 500;
+        }
+        
+        .status-indicator.success {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success-color);
+        }
+        
+        .status-indicator.warning {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning-color);
+        }
+        
+        .status-indicator.error {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger-color);
+        }
+        
+        .mode-buttons {
+            display: flex;
+            gap: var(--spacing-2);
+            margin-bottom: var(--spacing-4);
+        }
+        
+        .mode-btn {
+            flex: 1;
+            padding: var(--spacing-2) var(--spacing-3);
+            font-size: var(--font-size-xs);
+        }
+        
+        .mode-btn.active {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+        
+        .analysis-controls {
+            display: flex;
+            gap: var(--spacing-2);
+            align-items: center;
+            margin-bottom: var(--spacing-4);
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-2);
+        }
+        
+        .control-row {
+            display: flex;
+            gap: var(--spacing-2);
+            align-items: center;
+        }
+        
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .loading-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: var(--spacing-3);
+            padding: var(--spacing-6);
+            background: var(--bg-primary);
+            border-radius: var(--border-radius-lg);
+            box-shadow: var(--shadow-lg);
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid var(--gray-200);
+            border-top: 4px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* 平面图上传相关样式 */
+        .upload-area {
+            border: 2px dashed var(--border-color);
+            border-radius: var(--border-radius);
+            padding: var(--spacing-4);
+            text-align: center;
+            transition: var(--transition);
+            margin-bottom: var(--spacing-3);
+        }
+        
+        .upload-area:hover {
+            border-color: var(--primary-color);
+            background: var(--gray-50);
+        }
+        
+        .upload-btn {
+            width: 100%;
+            padding: var(--spacing-3) var(--spacing-4);
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+        
+        .upload-btn:hover {
+            background: var(--gray-100);
+        }
+        
+        .preview-image {
+            max-width: 100%;
+            height: auto;
+            border-radius: var(--border-radius);
+            border: 1px solid var(--border-color);
+            margin: var(--spacing-3) 0;
+        }
+        
+        .error-message {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger-color);
+            padding: var(--spacing-3);
+            border-radius: var(--border-radius);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            margin-top: var(--spacing-3);
+            font-size: var(--font-size-sm);
+        }
+        
+        .error-message i {
+            margin-right: var(--spacing-2);
+        }
+        
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: var(--spacing-3);
+            padding: var(--spacing-4);
+            background: var(--gray-50);
+            border-radius: var(--border-radius);
+            margin-top: var(--spacing-3);
+            font-size: var(--font-size-sm);
+            color: var(--gray-600);
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <i class="fas fa-drafting-compass"></i>
+                <span data-en="Floor Plan Analysis & Reconstruction" data-zh="手绘平面图分析与重建">手绘平面图分析与重建</span>
+            </div>
+            <div class="header-actions">
+                <!-- 语言切换按钮 -->
+                <div class="language-switch">
+                    <button id="lang-zh" class="btn btn-secondary">
+                        <i class="fas fa-language"></i>
+                        中文
+                    </button>
+                    <button id="lang-en" class="btn btn-secondary">
+                        <i class="fas fa-language"></i>
+                        English
+                    </button>
+                </div>
+                <button class="btn btn-secondary" id="backButton">
+                    <i class="fas fa-arrow-left"></i>
+                    <span data-en="Back to Main" data-zh="返回主页">返回主页</span>
+                </button>
+                <button class="btn btn-success" id="exportResults" style="display:none;">
+                    <i class="fas fa-download"></i>
+                    <span data-en="Export Results" data-zh="导出结果">导出结果</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主要内容区域 -->
+    <main class="analysis-container">
+        <!-- 分析标签页 -->
+        <div class="analysis-tabs">
+            <button class="analysis-tab active" data-tab="data-input">
+                <i class="fas fa-upload"></i>
+                <span data-en="Data Input" data-zh="数据输入">数据输入</span>
+            </button>
+            <button class="analysis-tab" data-tab="visibility-analysis">
+                <i class="fas fa-eye"></i>
+                <span data-en="Visibility Analysis" data-zh="视域分析">视域分析</span>
+            </button>
+            <button class="analysis-tab" data-tab="pathfinding">
+                <i class="fas fa-route"></i>
+                <span data-en="Pathfinding" data-zh="路径规划">路径规划</span>
+            </button>
+            <button class="analysis-tab" data-tab="3d-reconstruction">
+                <i class="fas fa-cube"></i>
+                <span data-en="3D Reconstruction" data-zh="3D重建">3D重建</span>
+            </button>
+        </div>
+
+        <!-- 数据输入标签页 -->
+        <div id="data-input" class="analysis-content active">
+            <div class="analysis-workspace">
+                <aside class="analysis-sidebar">
+                    <div class="sidebar-header">
+                        <h3><i class="fas fa-database"></i> <span data-en="Data Input" data-zh="数据输入">数据输入</span></h3>
+                    </div>
+                    
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h4><i class="fas fa-image"></i> <span data-en="Floor Plan Image" data-zh="平面图图片">平面图图片</span></h4>
+                        </div>
+                        <div class="panel-content">
+                            <div class="upload-area">
+                                <input type="file" id="floorPlanImageUpload" accept="image/*" style="display:none">
+                                <button class="btn btn-secondary btn-block upload-btn" id="uploadFloorPlanBtn">
+                                    <i class="fas fa-cloud-upload-alt"></i>
+                                    <span data-en="Upload Floor Plan Image" data-zh="上传平面图图片">上传平面图图片</span>
+                                </button>
+                            </div>
+                            
+                            <div id="imagePreviewContainer" style="display:none;">
+                                <img id="floorPlanPreview" alt="平面图预览" class="preview-image" style="max-width: 100%; margin: 10px 0; border-radius: 8px; border: 1px solid var(--border-color);">
+                                <div class="button-group">
+                                    <button class="btn btn-primary" id="vectorizeFloorPlanBtn">
+                                        <i class="fas fa-magic"></i>
+                                        <span data-en="Convert to Vector" data-zh="转换为矢量">转换为矢量</span>
+                                    </button>
+                                    <button class="btn btn-secondary" id="clearImageBtn">
+                                        <i class="fas fa-times"></i>
+                                        <span data-en="Clear" data-zh="清除">清除</span>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div id="vectorizationLoading" class="loading" style="display:none;">
+                                <div class="spinner"></div>
+                                <span data-en="Converting image to vector data..." data-zh="正在将图片转换为矢量数据...">正在将图片转换为矢量数据...</span>
+                            </div>
+                            
+                            <div id="vectorizationError" class="error-message" style="display:none;"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h4><i class="fas fa-file-upload"></i> <span data-en="JSON Data" data-zh="JSON数据">JSON数据</span></h4>
+                        </div>
+                        <div class="panel-content">
+                            <div class="form-group">
+                                <label for="jsonInput">
+                                    <span data-en="Paste JSON Data" data-zh="粘贴JSON数据">粘贴JSON数据</span>
+                                </label>
+                                <textarea id="jsonInput" class="json-input-area" placeholder="请粘贴平面图的JSON数据..."></textarea>
+                            </div>
+                            
+                            <div class="button-group">
+                                <button class="btn btn-primary" id="parseJsonBtn">
+                                    <i class="fas fa-play"></i>
+                                    <span data-en="Parse Data" data-zh="解析数据">解析数据</span>
+                                </button>
+                                <button class="btn btn-secondary" id="loadSampleBtn">
+                                    <i class="fas fa-file-code"></i>
+                                    <span data-en="Load Sample" data-zh="加载示例">加载示例</span>
+                                </button>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="jsonFileInput" class="btn btn-secondary btn-block">
+                                    <i class="fas fa-folder-open"></i>
+                                    <span data-en="Upload JSON File" data-zh="上传JSON文件">上传JSON文件</span>
+                                </label>
+                                <input type="file" id="jsonFileInput" accept=".json" style="display:none;">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h4><i class="fas fa-info-circle"></i> <span data-en="Data Status" data-zh="数据状态">数据状态</span></h4>
+                        </div>
+                        <div class="panel-content">
+                            <div id="dataStatus">
+                                <div class="status-indicator warning">
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                    <span data-en="No data loaded" data-zh="未加载数据">未加载数据</span>
+                                </div>
+                            </div>
+                            
+                            <div id="dataInfo" style="display:none;">
+                                <div class="form-group">
+                                    <label><span data-en="Walls" data-zh="墙体">墙体</span>: <span id="wallCount">0</span></label>
+                                    <label><span data-en="Doors" data-zh="门">门</span>: <span id="doorCount">0</span></label>
+                                    <label><span data-en="Rooms" data-zh="房间">房间</span>: <span id="roomCount">0</span></label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+                
+                <div class="analysis-main">
+                    <div class="analysis-main-header">
+                        <h3><i class="fas fa-eye"></i> <span data-en="Data Preview" data-zh="数据预览">数据预览</span></h3>
+                    </div>
+                    <div class="analysis-main-content">
+                        <canvas id="previewCanvas" class="visibility-canvas"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 视域分析标签页 -->
+        <div id="visibility-analysis" class="analysis-content">
+            <div class="analysis-workspace">
+                <aside class="analysis-sidebar">
+                    <div class="sidebar-header">
+                        <h3><i class="fas fa-eye"></i> <span data-en="Visibility Analysis" data-zh="视域分析">视域分析</span></h3>
+                    </div>
+                    
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h4><i class="fas fa-crosshairs"></i> <span data-en="Observer Settings" data-zh="观察者设置">观察者设置</span></h4>
+                        </div>
+                        <div class="panel-content">
+                            <div class="form-group">
+                                <label for="observerX"><span data-en="X Position" data-zh="X坐标">X坐标</span></label>
+                                <input type="number" id="observerX" value="100" step="1">
+                            </div>
+                            <div class="form-group">
+                                <label for="observerY"><span data-en="Y Position" data-zh="Y坐标">Y坐标</span></label>
+                                <input type="number" id="observerY" value="100" step="1">
+                            </div>
+                            <div class="form-group">
+                                <label for="viewRadius"><span data-en="View Radius" data-zh="视野半径">视野半径</span></label>
+                                <input type="number" id="viewRadius" value="200" step="10" min="10" max="500">
+                            </div>
+                            <div class="form-group">
+                                <label for="rayCount"><span data-en="Ray Count" data-zh="射线数量">射线数量</span></label>
+                                <input type="number" id="rayCount" value="360" step="10" min="36" max="720">
+                            </div>
+                            
+                            <button class="btn btn-primary btn-block" id="calculateVisibility">
+                                <i class="fas fa-calculator"></i>
+                                <span data-en="Calculate Visibility" data-zh="计算视域">计算视域</span>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h4><i class="fas fa-palette"></i> <span data-en="Display Options" data-zh="显示选项">显示选项</span></h4>
+                        </div>
+                        <div class="panel-content">
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="showWalls" checked>
+                                    <span class="checkmark"></span>
+                                    <span data-en="Show Walls" data-zh="显示墙体">显示墙体</span>
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="showDoors" checked>
+                                    <span class="checkmark"></span>
+                                    <span data-en="Show Doors" data-zh="显示门">显示门</span>
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="showRays" checked>
+                                    <span class="checkmark"></span>
+                                    <span data-en="Show Rays" data-zh="显示射线">显示射线</span>
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="showVisibleArea" checked>
+                                    <span class="checkmark"></span>
+                                    <span data-en="Show Visible Area" data-zh="显示可视区域">显示可视区域</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+                
+                <div class="analysis-main">
+                    <div class="analysis-main-header">
+                        <h3><i class="fas fa-eye"></i> <span data-en="Visibility Analysis Result" data-zh="视域分析结果">视域分析结果</span></h3>
+                        <div class="analysis-controls">
+                            <span data-en="Click to set observer position" data-zh="点击设置观察者位置">点击设置观察者位置</span>
+                        </div>
+                    </div>
+                    <div class="analysis-main-content">
+                        <canvas id="visibilityCanvas" class="visibility-canvas"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 路径规划标签页 -->
+        <div id="pathfinding" class="analysis-content">
+            <div class="analysis-workspace">
+                <aside class="analysis-sidebar">
+                    <div class="sidebar-header">
+                        <h3><i class="fas fa-route"></i> <span data-en="Pathfinding" data-zh="路径规划">路径规划</span></h3>
+                    </div>
+                    
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h4><i class="fas fa-cogs"></i> <span data-en="Grid Settings" data-zh="网格设置">网格设置</span></h4>
+                        </div>
+                        <div class="panel-content">
+                            <div class="form-group">
+                                <label for="gridResolution"><span data-en="Grid Resolution" data-zh="网格精度">网格精度</span></label>
+                                <select id="gridResolution">
+                                    <option value="low" data-en="Low (30x40)" data-zh="低 (30x40)">低 (30x40)</option>
+                                    <option value="medium" data-en="Medium (60x80)" data-zh="中 (60x80)">中 (60x80)</option>
+                                    <option value="high" selected data-en="High (120x200)" data-zh="高 (120x200)">高 (120x200)</option>
+                                    <option value="ultra" data-en="Ultra (200x200)" data-zh="超高 (200x200)">超高 (200x200)</option>
+                                </select>
+                            </div>
+                            
+                            <button class="btn btn-primary btn-block" id="generateGrid">
+                                <i class="fas fa-th"></i>
+                                <span data-en="Generate Grid" data-zh="生成网格">生成网格</span>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h4><i class="fas fa-mouse-pointer"></i> <span data-en="Operation Mode" data-zh="操作模式">操作模式</span></h4>
+                        </div>
+                        <div class="panel-content">
+                            <div class="mode-buttons">
+                                <button class="btn mode-btn" id="setStartMode">
+                                    <i class="fas fa-play"></i>
+                                    <span data-en="Start" data-zh="起点">起点</span>
+                                </button>
+                                <button class="btn mode-btn" id="setEndMode">
+                                    <i class="fas fa-stop"></i>
+                                    <span data-en="End" data-zh="终点">终点</span>
+                                </button>
+                                <button class="btn mode-btn" id="setWallMode">
+                                    <i class="fas fa-square"></i>
+                                    <span data-en="Wall" data-zh="墙体">墙体</span>
+                                </button>
+                            </div>
+                            
+                            <div class="button-group">
+                                <button class="btn btn-success" id="findPath">
+                                    <i class="fas fa-search"></i>
+                                    <span data-en="Find Path" data-zh="寻找路径">寻找路径</span>
+                                </button>
+                                <button class="btn btn-warning" id="resetPath">
+                                    <i class="fas fa-undo"></i>
+                                    <span data-en="Reset" data-zh="重置">重置</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h4><i class="fas fa-info-circle"></i> <span data-en="Path Info" data-zh="路径信息">路径信息</span></h4>
+                        </div>
+                        <div class="panel-content">
+                            <div id="pathInfo">
+                                <div class="form-group">
+                                    <label><span data-en="Path Length" data-zh="路径长度">路径长度</span>: <span id="pathLength">-</span></label>
+                                    <label><span data-en="Calculation Time" data-zh="计算时间">计算时间</span>: <span id="calcTime">-</span></label>
+                                    <label><span data-en="Nodes Explored" data-zh="探索节点">探索节点</span>: <span id="nodesExplored">-</span></label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+                
+                <div class="analysis-main">
+                    <div class="analysis-main-header">
+                        <h3><i class="fas fa-route"></i> <span data-en="Pathfinding Grid" data-zh="路径规划网格">路径规划网格</span></h3>
+                        <div class="analysis-controls">
+                            <span data-en="Click cells to set start/end points or modify walls" data-zh="点击单元格设置起点/终点或修改墙体">点击单元格设置起点/终点或修改墙体</span>
+                        </div>
+                    </div>
+                    <div class="analysis-main-content">
+                        <div id="gridWrapper" class="grid-wrapper">
+                            <div id="gridContainer" class="grid-container"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3D重建标签页 -->
+        <div id="3d-reconstruction" class="analysis-content">
+            <div class="analysis-workspace">
+                <aside class="analysis-sidebar">
+                    <div class="sidebar-header">
+                        <h3><i class="fas fa-cube"></i> <span data-en="3D Reconstruction" data-zh="3D重建">3D重建</span></h3>
+                    </div>
+                    
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h4><i class="fas fa-sliders-h"></i> <span data-en="Model Settings" data-zh="模型设置">模型设置</span></h4>
+                        </div>
+                        <div class="panel-content">
+                            <div class="form-group">
+                                <label for="wallHeight"><span data-en="Wall Height" data-zh="墙体高度">墙体高度</span></label>
+                                <input type="number" id="wallHeight" value="120" step="10" min="50" max="300">
+                            </div>
+                            <div class="form-group">
+                                <label for="wallThickness"><span data-en="Wall Thickness" data-zh="墙体厚度">墙体厚度</span></label>
+                                <input type="number" id="wallThickness" value="10" step="1" min="5" max="30">
+                            </div>
+                            <div class="form-group">
+                                <label for="doorHeight"><span data-en="Door Height" data-zh="门高度">门高度</span></label>
+                                <input type="number" id="doorHeight" value="100" step="10" min="50" max="250">
+                            </div>
+                            
+                            <button class="btn btn-primary btn-block" id="generate3DModel">
+                                <i class="fas fa-cube"></i>
+                                <span data-en="Generate 3D Model" data-zh="生成3D模型">生成3D模型</span>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h4><i class="fas fa-palette"></i> <span data-en="Material Settings" data-zh="材质设置">材质设置</span></h4>
+                        </div>
+                        <div class="panel-content">
+                            <div class="form-group">
+                                <label for="wallColor"><span data-en="Wall Color" data-zh="墙体颜色">墙体颜色</span></label>
+                                <input type="color" id="wallColor" value="#666666">
+                            </div>
+                            <div class="form-group">
+                                <label for="floorColor"><span data-en="Floor Color" data-zh="地板颜色">地板颜色</span></label>
+                                <input type="color" id="floorColor" value="#cccccc">
+                            </div>
+                            <div class="form-group">
+                                <label for="doorColor"><span data-en="Door Color" data-zh="门颜色">门颜色</span></label>
+                                <input type="color" id="doorColor" value="#8B4513">
+                            </div>
+                            
+                            <button class="btn btn-secondary btn-block" id="updateMaterials">
+                                <i class="fas fa-sync"></i>
+                                <span data-en="Update Materials" data-zh="更新材质">更新材质</span>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h4><i class="fas fa-camera"></i> <span data-en="View Controls" data-zh="视图控制">视图控制</span></h4>
+                        </div>
+                        <div class="panel-content">
+                            <div class="button-group">
+                                <button class="btn btn-secondary" id="resetCamera">
+                                    <i class="fas fa-home"></i>
+                                    <span data-en="Reset View" data-zh="重置视图">重置视图</span>
+                                </button>
+                                <button class="btn btn-secondary" id="topView">
+                                    <i class="fas fa-arrow-up"></i>
+                                    <span data-en="Top View" data-zh="俯视图">俯视图</span>
+                                </button>
+                            </div>
+                            <div class="button-group">
+                                <button class="btn btn-secondary" id="frontView">
+                                    <i class="fas fa-arrow-right"></i>
+                                    <span data-en="Front View" data-zh="正视图">正视图</span>
+                                </button>
+                                <button class="btn btn-secondary" id="sideView">
+                                    <i class="fas fa-arrow-left"></i>
+                                    <span data-en="Side View" data-zh="侧视图">侧视图</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+                
+                <div class="analysis-main">
+                    <div class="analysis-main-header">
+                        <h3><i class="fas fa-cube"></i> <span data-en="3D Model Viewer" data-zh="3D模型查看器">3D模型查看器</span></h3>
+                        <div class="analysis-controls">
+                            <span data-en="Use mouse to rotate, zoom and pan the 3D model" data-zh="使用鼠标旋转、缩放和平移3D模型">使用鼠标旋转、缩放和平移3D模型</span>
+                        </div>
+                    </div>
+                    <div class="analysis-main-content">
+                        <div id="threejsContainer" class="canvas-3d"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 加载遮罩 -->
+    <div id="loadingOverlay" class="loading-overlay" style="display:none;">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <span data-en="Processing..." data-zh="处理中...">处理中...</span>
+        </div>
+    </div>
+
+    <!-- 引入必要的库 -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.124.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.124.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="手绘平面图分析与重建.js"></script>
+</body>
+</html> 
