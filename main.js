@@ -1526,6 +1526,13 @@ function vectorizeImage(dataURL) {
 }
 
 function callVectorAPI(base64Image) {
+    const apiKey = document.getElementById('rasterscanApiKey').value.trim();
+    if (!apiKey) {
+        console.log('请先输入RasterScan API Key');
+        document.getElementById('loading').style.display = 'none';
+        return;
+    }
+    
     const data = JSON.stringify({ image: base64Image });
     const apiUrl = 'https://backend.rasterscan.com/raster-to-vector-base64';
     
@@ -1533,7 +1540,7 @@ function callVectorAPI(base64Image) {
     fetch('https://corsproxy.io/?' + encodeURIComponent(apiUrl), {
         method: 'POST',
         headers: {
-            'x-api-key': 'sk-693d8b4ffc3cdd6c8f726f09f81d852bf0ecc900',
+            'x-api-key': apiKey,
             'Content-Type': 'application/json'
         },
         body: data
@@ -1573,11 +1580,7 @@ function handleVectorSuccess(data) {
 }
 
 function handleVectorError(error) {
-    const errorDiv = document.getElementById('error');
-    errorDiv.textContent = `矢量化失败: ${error.message}`;
-    errorDiv.style.display = 'block';
-    
-    console.error('矢量化错误:', error);
+    console.log('矢量化未成功:', error.message);
 }
 
 function hideVectorButtons() {

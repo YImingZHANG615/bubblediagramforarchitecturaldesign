@@ -2862,6 +2862,12 @@ function vectorizeFloorPlanImage() {
 function callFloorPlanVectorAPI(dataURL) {
     return new Promise((resolve, reject) => {
         try {
+            const apiKey = document.getElementById('rasterscanApiKey')?.value?.trim();
+            if (!apiKey) {
+                reject(new Error('请先输入RasterScan API Key'));
+                return;
+            }
+            
             // 提取base64数据
             const base64Data = dataURL.split(',')[1];
             
@@ -2873,7 +2879,7 @@ function callFloorPlanVectorAPI(dataURL) {
             fetch(proxyUrl, {
                 method: 'POST',
                 headers: {
-                    'x-api-key': 'sk-693d8b4ffc3cdd6c8f726f09f81d852bf0ecc900',
+                    'x-api-key': apiKey,
                     'Content-Type': 'application/json'
                 },
                 body: data

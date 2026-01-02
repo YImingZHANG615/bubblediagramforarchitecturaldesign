@@ -327,6 +327,15 @@
                             <h4><i class="fas fa-image"></i> <span data-en="Image Vectorization" data-zh="图片矢量化">图片矢量化</span></h4>
                         </div>
                         <div class="panel-content">
+                            <div class="api-key-input" style="margin-bottom: 15px;">
+                                <label for="rasterscanApiKey" style="display: block; margin-bottom: 5px; font-size: 12px; color: #666;">
+                                    <i class="fas fa-key"></i> <span data-en="RasterScan API Key" data-zh="RasterScan API Key">RasterScan API Key</span>
+                                </label>
+                                <input type="password" id="rasterscanApiKey" placeholder="sk-xxxx..." style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+                                <small style="color: #999; font-size: 10px;">
+                                    <span data-en="Get your API key from rasterscan.com" data-zh="从 rasterscan.com 获取API Key">从 rasterscan.com 获取API Key</span>
+                                </small>
+                            </div>
                             <div class="upload-area">
                                 <input type="file" id="imageUpload" accept="image/*" style="display:none">
                                 <button class="btn btn-secondary btn-block upload-btn" onclick="document.getElementById('imageUpload').click()">
