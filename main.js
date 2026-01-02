@@ -1527,8 +1527,10 @@ function vectorizeImage(dataURL) {
 
 function callVectorAPI(base64Image) {
     const data = JSON.stringify({ image: base64Image });
+    const apiUrl = 'https://backend.rasterscan.com/raster-to-vector-base64';
+    const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(apiUrl);
     
-    fetch('https://backend.rasterscan.com/raster-to-vector-base64', {
+    fetch(proxyUrl, {
         method: 'POST',
         headers: {
             'x-api-key': 'sk-693d8b4ffc3cdd6c8f726f09f81d852bf0ecc900',
