@@ -2868,11 +2868,10 @@ function callFloorPlanVectorAPI(dataURL) {
             // 使用与主程序一致的API
             const data = JSON.stringify({ image: base64Data });
             
-            fetch('https://floor-plan-digitalization.p.rapidapi.com/raster-to-vector-base64', {
+            fetch('https://backend.rasterscan.com/raster-to-vector-base64', {
                 method: 'POST',
                 headers: {
-                    'x-rapidapi-key': 'e6b5e3a327msh44b190915a03adap1255fcjsndc6a009b5130',
-                    'x-rapidapi-host': 'floor-plan-digitalization.p.rapidapi.com',
+                    'x-api-key': 'sk-693d8b4ffc3cdd6c8f726f09f81d852bf0ecc900',
                     'Content-Type': 'application/json'
                 },
                 body: data
